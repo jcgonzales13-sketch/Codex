@@ -4,6 +4,7 @@ using ERP.Modules.Depositos;
 using ERP.Modules.Empresas;
 using ERP.Modules.Estoque;
 using ERP.Modules.Fiscal;
+using ERP.Modules.Fornecedores;
 using ERP.Modules.Identity;
 using ERP.Modules.Vendas;
 using ERP.Api.Application.Integration;
@@ -14,6 +15,7 @@ public interface IErpStore
 {
     object SyncRoot { get; }
     Dictionary<Guid, Empresa> Empresas { get; }
+    Dictionary<Guid, Fornecedor> Fornecedores { get; }
     Dictionary<Guid, Produto> Produtos { get; }
     Dictionary<Guid, Cliente> Clientes { get; }
     Dictionary<Guid, Deposito> Depositos { get; }

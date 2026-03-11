@@ -4,6 +4,7 @@ using ERP.Modules.Depositos;
 using ERP.Modules.Empresas;
 using ERP.Modules.Estoque;
 using ERP.Modules.Fiscal;
+using ERP.Modules.Fornecedores;
 using ERP.Modules.Identity;
 using ERP.Modules.Vendas;
 using Microsoft.Extensions.Options;
@@ -23,6 +24,7 @@ public sealed class JsonFileErpStore : IErpStore
 
     public object SyncRoot { get; } = new();
     public Dictionary<Guid, Empresa> Empresas { get; } = [];
+    public Dictionary<Guid, Fornecedor> Fornecedores { get; } = [];
     public Dictionary<Guid, Produto> Produtos { get; } = [];
     public Dictionary<Guid, Cliente> Clientes { get; } = [];
     public Dictionary<Guid, Deposito> Depositos { get; } = [];

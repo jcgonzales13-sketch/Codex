@@ -9,6 +9,7 @@ A solucao esta organizada por modulos de negocio independentes, com uma API mini
 Modulos atuais:
 
 - Empresas: cadastro, bloqueio, inativacao e validacao do contexto operacional.
+- Fornecedores: cadastro, bloqueio, inativacao e vinculo operacional com compras.
 - Catalogo: cadastro de produtos, variacoes e auditoria fiscal.
 - Clientes: cadastro, bloqueio, inativacao e consulta operacional de clientes.
 - Depositos: cadastro, ativacao, inativacao e validacao operacional de armazenagem.
@@ -26,6 +27,7 @@ src/
   ERP.Api
   ERP.BuildingBlocks
   ERP.Modules.Empresas
+  ERP.Modules.Fornecedores
   ERP.Modules.Catalogo
   ERP.Modules.Clientes
   ERP.Modules.Depositos
@@ -37,6 +39,7 @@ src/
   ERP.Modules.Vendas
 tests/
   ERP.Modules.Empresas.UnitTests
+  ERP.Modules.Fornecedores.UnitTests
   ERP.Modules.Catalogo.UnitTests
   ERP.Modules.Clientes.UnitTests
   ERP.Modules.Depositos.UnitTests
@@ -79,12 +82,14 @@ Por padrao, a API expoe endpoints minimos:
 
 - `GET /`
 - `GET /health`
+- `GET /healthz`
 - `GET /health/ready`
 - `GET /modules`
 - `GET /system/storage`
 - `GET /system/events`
 - `GET /estoque/movimentos`
 - `GET /empresas`
+- `GET /fornecedores`
 - `GET /catalogo/produtos`
 - `GET /clientes`
 - `GET /depositos`
@@ -120,6 +125,10 @@ Retorna o estado online da aplicacao e os modulos carregados pela API.
 
 Retorna status de saude simples com timestamp UTC.
 
+`GET /healthz`
+
+Alias simples de health check para deploy e monitoramento externo.
+
 `GET /health/ready`
 
 Executa o health check do provider de storage ativo.
@@ -152,6 +161,10 @@ Retorna produtos com filtros opcionais por empresa, status ativo, termo e pagina
 
 Retorna clientes com filtros opcionais por empresa, status, termo e paginacao.
 
+`GET /fornecedores`
+
+Retorna fornecedores com filtros opcionais por empresa, status, termo e paginacao.
+
 `GET /depositos`
 
 Retorna depositos com filtros opcionais por empresa, status, termo e paginacao.
@@ -162,7 +175,7 @@ Retorna usuarios com filtros opcionais por empresa, status, termo e paginacao.
 
 `GET /compras/importacoes-nota-entrada`
 
-Retorna o historico das importacoes de nota de entrada, com filtros por empresa, deposito, sucesso da importacao, chave e paginacao.
+Retorna o historico das importacoes de nota de entrada, com filtros por empresa, fornecedor, deposito, sucesso da importacao, chave e paginacao.
 
 `GET /vendas/pedidos`
 
@@ -180,10 +193,11 @@ Exemplos de consulta:
 
 - `GET /catalogo/produtos?ativo=true&page=1&pageSize=20&termo=SKU`
 - `GET /empresas?status=Ativa&page=1&pageSize=20&termo=Empresa`
+- `GET /fornecedores?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=Fornecedor`
 - `GET /clientes?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=Cliente`
 - `GET /depositos?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=DEP`
 - `GET /identity/usuarios?status=Ativo&page=1&pageSize=20&termo=usuario`
-- `GET /compras/importacoes-nota-entrada?empresaId={empresaId}&depositoId={depositoId}&importadaComSucesso=true&page=1&pageSize=20`
+- `GET /compras/importacoes-nota-entrada?empresaId={empresaId}&fornecedorId={fornecedorId}&depositoId={depositoId}&importadaComSucesso=true&page=1&pageSize=20`
 - `GET /estoque/saldos?produtoId={produtoId}&depositoId={depositoId}&page=1&pageSize=20`
 - `GET /estoque/movimentos?produtoId={produtoId}&depositoId={depositoId}&page=1&pageSize=20`
 - `GET /vendas/pedidos?status=Reservado&clienteId={clienteId}&page=1&pageSize=20`
@@ -218,6 +232,25 @@ Exemplo com SQL Server local:
   "StateTable": "ErpState"
 }
 ```
+
+## Deploy no Render
+
+O repositorio agora inclui [`Dockerfile`](/c:/CodexProject/Dockerfile) e [`.dockerignore`](/c:/CodexProject/.dockerignore) para publicar a API no plano free do Render via container.
+
+Configuracao recomendada no Render:
+
+- Environment: `Docker`
+- Dockerfile Path: `./Dockerfile`
+- Health Check Path: `/health`
+- Disk: adicionar um persistent disk montado em `/data` se quiser manter o provider `JsonFile` entre reinicios
+
+Variaveis uteis:
+
+- `Storage__Provider=JsonFile`
+- `Storage__FilePath=/data/erp-store.json`
+- ou `Storage__Provider=InMemory` para ambiente efemero
+
+O container ja respeita a variavel `PORT` do Render e usa `ForwardedHeaders` para funcionar corretamente atras do proxy HTTPS da plataforma.
 
 Observacao importante sobre esta maquina:
 

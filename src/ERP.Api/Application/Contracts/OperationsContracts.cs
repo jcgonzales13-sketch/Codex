@@ -4,6 +4,7 @@ public sealed record StorageStatusResponse(
     string Provider,
     string? FilePath,
     int Empresas,
+    int Fornecedores,
     int Produtos,
     int Clientes,
     int Depositos,

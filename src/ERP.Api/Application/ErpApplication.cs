@@ -10,6 +10,7 @@ using ERP.Modules.Empresas;
 using ERP.Modules.Compras;
 using ERP.Modules.Estoque;
 using ERP.Modules.Fiscal;
+using ERP.Modules.Fornecedores;
 using ERP.Modules.Identity;
 using ERP.Modules.Integracoes;
 using ERP.Modules.Vendas;
@@ -290,6 +291,98 @@ public sealed class ErpApplicationService(IErpStore store)
             cliente.Bloquear(request.Motivo);
             store.Persist();
             return MapCliente(cliente);
+        }
+    }
+
+    public PagedResponse<FornecedorResponse> ConsultarFornecedores(ConsultarFornecedoresRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var query = store.Fornecedores.Values.AsEnumerable();
+            if (request.EmpresaId is not null)
+            {
+                query = query.Where(item => item.EmpresaId == request.EmpresaId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Status) &&
+                Enum.TryParse<StatusFornecedor>(request.Status, true, out var status))
+            {
+                query = query.Where(item => item.Status == status);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Termo))
+            {
+                var termo = request.Termo.Trim();
+                query = query.Where(item =>
+                    item.Documento.Contains(termo, StringComparison.OrdinalIgnoreCase) ||
+                    item.Nome.Contains(termo, StringComparison.OrdinalIgnoreCase) ||
+                    (item.Email is not null && item.Email.Contains(termo, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            return ToPagedResponse(query.Select(MapFornecedor), request.Page, request.PageSize);
+        }
+    }
+
+    public FornecedorResponse CadastrarFornecedor(CreateFornecedorRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
+            _ = GetEmpresaOperacional(request.EmpresaId);
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Documento, "Documento");
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
+            var repository = new FornecedorRepository(store);
+            var service = new CadastroFornecedorService(repository);
+            var fornecedor = service.Cadastrar(request.EmpresaId, request.Documento, request.Nome, request.Email);
+            AddIntegrationEvent("fornecedores.fornecedor_cadastrado", "Fornecedores", fornecedor.Id.ToString(), $"Fornecedor {fornecedor.Documento} cadastrado.");
+            store.Persist();
+            return MapFornecedor(fornecedor);
+        }
+    }
+
+    public FornecedorResponse AtualizarFornecedor(Guid fornecedorId, AtualizarFornecedorRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
+            var fornecedor = GetFornecedor(fornecedorId);
+            fornecedor.AtualizarCadastro(request.Nome, request.Email);
+            store.Persist();
+            return MapFornecedor(fornecedor);
+        }
+    }
+
+    public FornecedorResponse AtivarFornecedor(Guid fornecedorId)
+    {
+        lock (store.SyncRoot)
+        {
+            var fornecedor = GetFornecedor(fornecedorId);
+            fornecedor.Ativar();
+            store.Persist();
+            return MapFornecedor(fornecedor);
+        }
+    }
+
+    public FornecedorResponse InativarFornecedor(Guid fornecedorId)
+    {
+        lock (store.SyncRoot)
+        {
+            var fornecedor = GetFornecedor(fornecedorId);
+            fornecedor.Inativar();
+            store.Persist();
+            return MapFornecedor(fornecedor);
+        }
+    }
+
+    public FornecedorResponse BloquearFornecedor(Guid fornecedorId, BloquearFornecedorRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Motivo, "Motivo");
+            var fornecedor = GetFornecedor(fornecedorId);
+            fornecedor.Bloquear(request.Motivo);
+            store.Persist();
+            return MapFornecedor(fornecedor);
         }
     }
 
@@ -778,6 +871,9 @@ public sealed class ErpApplicationService(IErpStore store)
             {
                 ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
                 var empresa = GetEmpresaOperacional(request.EmpresaId);
+                ApplicationGuard.AgainstEmptyGuid(request.FornecedorId, "FornecedorId");
+                var fornecedor = GetFornecedorOperacional(request.FornecedorId);
+                EnsureSameEmpresa(empresa.Id, fornecedor.EmpresaId, "Fornecedor informado pertence a outra empresa.");
                 ApplicationGuard.AgainstEmptyGuid(request.DepositoId, "DepositoId");
                 var deposito = GetDepositoOperacional(request.DepositoId);
                 EnsureSameEmpresa(empresa.Id, deposito.EmpresaId, "Deposito informado pertence a outra empresa.");
@@ -816,6 +912,7 @@ public sealed class ErpApplicationService(IErpStore store)
 
                 store.ImportacoesNotaEntrada.Add(new ImportacaoNotaEntradaRegistro(
                     request.EmpresaId,
+                    request.FornecedorId,
                     request.DepositoId,
                     request.ChaveAcesso,
                     resultado.ImportadaComSucesso,
@@ -840,6 +937,11 @@ public sealed class ErpApplicationService(IErpStore store)
             if (request.EmpresaId is not null)
             {
                 query = query.Where(item => item.EmpresaId == request.EmpresaId);
+            }
+
+            if (request.FornecedorId is not null)
+            {
+                query = query.Where(item => item.FornecedorId == request.FornecedorId);
             }
 
             if (request.DepositoId is not null)
@@ -1121,6 +1223,23 @@ public sealed class ErpApplicationService(IErpStore store)
         return empresa;
     }
 
+    private Fornecedor GetFornecedor(Guid fornecedorId)
+    {
+        if (!store.Fornecedores.TryGetValue(fornecedorId, out var fornecedor))
+        {
+            throw new NotFoundException("Fornecedor nao encontrado.");
+        }
+
+        return fornecedor;
+    }
+
+    private Fornecedor GetFornecedorOperacional(Guid fornecedorId)
+    {
+        var fornecedor = GetFornecedor(fornecedorId);
+        fornecedor.GarantirQuePodeFornecer();
+        return fornecedor;
+    }
+
     private Usuario GetUsuario(Guid usuarioId)
     {
         if (!store.Usuarios.TryGetValue(usuarioId, out var usuario))
@@ -1228,6 +1347,11 @@ public sealed class ErpApplicationService(IErpStore store)
         return new ClienteResponse(cliente.Id, cliente.EmpresaId, cliente.Documento, cliente.Nome, cliente.Email, cliente.Status.ToString(), cliente.UltimoBloqueioEm);
     }
 
+    private static FornecedorResponse MapFornecedor(Fornecedor fornecedor)
+    {
+        return new FornecedorResponse(fornecedor.Id, fornecedor.EmpresaId, fornecedor.Documento, fornecedor.Nome, fornecedor.Email, fornecedor.Status.ToString(), fornecedor.UltimoBloqueioEm);
+    }
+
     private static EmpresaResponse MapEmpresa(Empresa empresa)
     {
         return new EmpresaResponse(empresa.Id, empresa.Documento, empresa.NomeFantasia, empresa.RazaoSocial, empresa.Status.ToString());
@@ -1242,6 +1366,7 @@ public sealed class ErpApplicationService(IErpStore store)
     {
         return new ImportacaoNotaEntradaResponse(
             importacao.EmpresaId,
+            importacao.FornecedorId,
             importacao.DepositoId,
             importacao.ChaveAcesso,
             importacao.ImportadaComSucesso,
@@ -1417,6 +1542,14 @@ public sealed class ErpApplicationService(IErpStore store)
             store.Clientes.Values.Any(cliente => cliente.EmpresaId == empresaId && string.Equals(cliente.Documento, documento.Trim(), StringComparison.OrdinalIgnoreCase));
 
         public void Add(Cliente cliente) => store.Clientes[cliente.Id] = cliente;
+    }
+
+    private sealed class FornecedorRepository(IErpStore store) : IFornecedorRepository
+    {
+        public bool DocumentoJaExiste(Guid empresaId, string documento) =>
+            store.Fornecedores.Values.Any(fornecedor => fornecedor.EmpresaId == empresaId && string.Equals(fornecedor.Documento, documento.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        public void Add(Fornecedor fornecedor) => store.Fornecedores[fornecedor.Id] = fornecedor;
     }
 
     private sealed class DepositoRepository(IErpStore store) : IDepositoRepository

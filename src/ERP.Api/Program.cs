@@ -2,10 +2,17 @@ using ERP.Api.Application;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Health;
 using ERP.Api.Application.Storage;
+using Microsoft.AspNetCore.HttpOverrides;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
@@ -27,6 +34,7 @@ builder.Services.AddSingleton<ErpApplicationService>();
 var app = builder.Build();
 
 app.UseErpExceptionHandling();
+app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 
 app.MapGet("/", () => Results.Ok(ApiResponses.Ok(new
@@ -34,10 +42,16 @@ app.MapGet("/", () => Results.Ok(ApiResponses.Ok(new
     application = "ERP.Api",
     status = "online",
     storage = builder.Configuration.GetSection(StorageOptions.SectionName).GetValue<string>("Provider") ?? "InMemory",
-    modules = new[] { "Empresas", "Catalogo", "Clientes", "Depositos", "Compras", "Estoque", "Vendas", "Fiscal", "Identity", "Integracoes" }
+    modules = new[] { "Empresas", "Fornecedores", "Catalogo", "Clientes", "Depositos", "Compras", "Estoque", "Vendas", "Fiscal", "Identity", "Integracoes" }
 })));
 
 app.MapGet("/health", () => Results.Ok(ApiResponses.Ok(new
+{
+    status = "healthy",
+    checkedAt = DateTimeOffset.UtcNow
+})));
+
+app.MapGet("/healthz", () => Results.Ok(ApiResponses.Ok(new
 {
     status = "healthy",
     checkedAt = DateTimeOffset.UtcNow
@@ -64,6 +78,7 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
 app.MapGet("/modules", () => Results.Ok(ApiResponses.Ok(new[]
 {
     new { Name = "Empresas", Capability = "Cadastro de empresas e validacao do contexto operacional" },
+    new { Name = "Fornecedores", Capability = "Cadastro de fornecedores e vinculo operacional com compras" },
     new { Name = "Catalogo", Capability = "Cadastro de produtos, variacoes e auditoria fiscal" },
     new { Name = "Clientes", Capability = "Cadastro de clientes, bloqueio e consulta operacional" },
     new { Name = "Depositos", Capability = "Cadastro de depositos e validacao operacional de armazenagem" },
@@ -80,6 +95,7 @@ app.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.IOp
         options.Value.Provider,
         options.Value.FilePath,
         store.Empresas.Count,
+        store.Fornecedores.Count,
         store.Produtos.Count,
         store.Clientes.Count,
         store.Depositos.Count,

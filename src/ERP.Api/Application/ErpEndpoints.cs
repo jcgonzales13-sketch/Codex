@@ -45,6 +45,19 @@ public static class ErpEndpoints
         clientes.MapPost("/{clienteId:guid}/inativar", (Guid clienteId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.InativarCliente(clienteId))));
         clientes.MapPost("/{clienteId:guid}/bloquear", (Guid clienteId, BloquearClienteRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.BloquearCliente(clienteId, request))));
 
+        var fornecedores = app.MapGroup("/fornecedores").WithTags("Fornecedores");
+        fornecedores.MapGet(string.Empty, (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ConsultarFornecedores(new ConsultarFornecedoresRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))));
+        fornecedores.MapPost(string.Empty, (CreateFornecedorRequest request, ErpApplicationService service) =>
+        {
+            var response = service.CadastrarFornecedor(request);
+            return Results.Created($"/fornecedores/{response.Id}", ApiResponses.Ok(response));
+        });
+        fornecedores.MapPost("/{fornecedorId:guid}/atualizar", (Guid fornecedorId, AtualizarFornecedorRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.AtualizarFornecedor(fornecedorId, request))));
+        fornecedores.MapPost("/{fornecedorId:guid}/ativar", (Guid fornecedorId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.AtivarFornecedor(fornecedorId))));
+        fornecedores.MapPost("/{fornecedorId:guid}/inativar", (Guid fornecedorId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.InativarFornecedor(fornecedorId))));
+        fornecedores.MapPost("/{fornecedorId:guid}/bloquear", (Guid fornecedorId, BloquearFornecedorRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.BloquearFornecedor(fornecedorId, request))));
+
         var depositos = app.MapGroup("/depositos").WithTags("Depositos");
         depositos.MapGet(string.Empty, (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
             Results.Ok(ApiResponses.Ok(service.ConsultarDepositos(new ConsultarDepositosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))));
@@ -94,8 +107,8 @@ public static class ErpEndpoints
         vendas.MapPost("/pedidos/{pedidoId:guid}/cancelar", (Guid pedidoId, CancelarPedidoRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.CancelarPedido(pedidoId, request))));
 
         var compras = app.MapGroup("/compras").WithTags("Compras");
-        compras.MapGet("/importacoes-nota-entrada", (Guid? empresaId, Guid? depositoId, bool? importadaComSucesso, string? chaveAcesso, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresaId, depositoId, importadaComSucesso, chaveAcesso, page ?? 1, pageSize ?? 20)))));
+        compras.MapGet("/importacoes-nota-entrada", (Guid? empresaId, Guid? fornecedorId, Guid? depositoId, bool? importadaComSucesso, string? chaveAcesso, int? page, int? pageSize, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresaId, fornecedorId, depositoId, importadaComSucesso, chaveAcesso, page ?? 1, pageSize ?? 20)))));
         compras.MapPost("/importacoes-nota-entrada", (ImportarNotaEntradaRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.ImportarNotaEntrada(request))));
 
         var fiscal = app.MapGroup("/fiscal").WithTags("Fiscal");

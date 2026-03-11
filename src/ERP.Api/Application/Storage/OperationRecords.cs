@@ -2,6 +2,7 @@ namespace ERP.Api.Application.Storage;
 
 public sealed record ImportacaoNotaEntradaRegistro(
     Guid EmpresaId,
+    Guid FornecedorId,
     Guid DepositoId,
     string ChaveAcesso,
     bool ImportadaComSucesso,

@@ -16,6 +16,7 @@
     <ProjectReference Include="..\ERP.Modules.Clientes\ERP.Modules.Clientes.csproj" />
     <ProjectReference Include="..\ERP.Modules.Depositos\ERP.Modules.Depositos.csproj" />
     <ProjectReference Include="..\ERP.Modules.Empresas\ERP.Modules.Empresas.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Fornecedores\ERP.Modules.Fornecedores.csproj" />
     <ProjectReference Include="..\ERP.Modules.Compras\ERP.Modules.Compras.csproj" />
     <ProjectReference Include="..\ERP.Modules.Estoque\ERP.Modules.Estoque.csproj" />
     <ProjectReference Include="..\ERP.Modules.Fiscal\ERP.Modules.Fiscal.csproj" />

@@ -15,6 +15,7 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
         var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000101", "Empresa Principal", "Empresa Principal LTDA"));
+        var fornecedor = service.CadastrarFornecedor(new CreateFornecedorRequest(empresa.Id, "22000000000101", "Fornecedor Principal", "fornecedor1@empresa.com"));
         var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-001", "Deposito Principal"));
         var produto = service.CadastrarProduto(new CreateProdutoRequest(
             empresa.Id,
@@ -29,6 +30,7 @@ public sealed class ImportacaoNotaEntradaApplicationTests
 
         var resultado = service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
             produto.EmpresaId,
+            fornecedor.Id,
             deposito.Id,
             "CHAVE-IMPORT-1",
             [new ItemNotaEntradaExternaRequest("EXT-1", "Produto externo", 3m)],
@@ -52,10 +54,12 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
         var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000119", "Empresa Pendencia", "Empresa Pendencia LTDA"));
+        var fornecedor = service.CadastrarFornecedor(new CreateFornecedorRequest(empresa.Id, "22000000000119", "Fornecedor Pendencia", "fornecedorpendencia@empresa.com"));
         var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-007", "Deposito Pendencia"));
 
         var resultado = service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
             empresa.Id,
+            fornecedor.Id,
             deposito.Id,
             "CHAVE-IMPORT-2",
             [new ItemNotaEntradaExternaRequest("EXT-2", "Produto externo", 2m)],
@@ -72,6 +76,7 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
         var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000102", "Empresa Evento", "Empresa Evento LTDA"));
+        var fornecedor = service.CadastrarFornecedor(new CreateFornecedorRequest(empresa.Id, "22000000000102", "Fornecedor Evento", "fornecedorevento@empresa.com"));
         var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-002", "Deposito Evento"));
         var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000001", "Cliente Evento", "evento@empresa.com"));
 
@@ -88,6 +93,7 @@ public sealed class ImportacaoNotaEntradaApplicationTests
 
         service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
             empresa.Id,
+            fornecedor.Id,
             deposito.Id,
             "CHAVE-EVT-1",
             [new ItemNotaEntradaExternaRequest("EXT-3", "Produto evento", 5m)],
@@ -360,11 +366,13 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
         var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000116", "Empresa Historico", "Empresa Historico LTDA"));
+        var fornecedor = service.CadastrarFornecedor(new CreateFornecedorRequest(empresa.Id, "22000000000116", "Fornecedor Historico", "fornecedorhistorico@empresa.com"));
         var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-005", "Deposito Historico"));
         var produto = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P200", "SKU-200", "Produto Historico", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
 
         service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
             empresa.Id,
+            fornecedor.Id,
             deposito.Id,
             "CHAVE-HIST-1",
             [new ItemNotaEntradaExternaRequest("EXT-H1", "Produto Historico", 1m)],
@@ -373,7 +381,7 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         service.ProcessarWebhook(new ProcessarWebhookRequest("evt-hist-1", "marketplace", "{\"pedido\":\"1\"}"));
         service.ProcessarWebhook(new ProcessarWebhookRequest("evt-hist-1", "marketplace", "{\"pedido\":\"1\"}"));
 
-        var importacoes = service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresa.Id, deposito.Id, true, "CHAVE-HIST", 1, 10));
+        var importacoes = service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresa.Id, fornecedor.Id, deposito.Id, true, "CHAVE-HIST", 1, 10));
         var webhooks = service.ConsultarWebhooks(new ConsultarWebhooksRequest("marketplace", "IgnoradoDuplicado", "evt-hist", 1, 10));
 
         var importacao = Assert.Single(importacoes.Items);
@@ -455,17 +463,61 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         var service = new ErpApplicationService(store);
         var empresaImportacao = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000124", "Empresa Importacao", "Empresa Importacao LTDA"));
         var empresaProduto = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000125", "Empresa Produto Importacao", "Empresa Produto Importacao LTDA"));
+        var fornecedor = service.CadastrarFornecedor(new CreateFornecedorRequest(empresaImportacao.Id, "22000000000124", "Fornecedor Importacao", "fornecedorimportacao@empresa.com"));
         var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresaImportacao.Id, "DEP-009", "Deposito Importacao"));
         var produto = service.CadastrarProduto(new CreateProdutoRequest(empresaProduto.Id, "P602", "SKU-602", "Produto Outra Empresa", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
 
         var exception = Assert.Throws<DomainException>(() => service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
             empresaImportacao.Id,
+            fornecedor.Id,
             deposito.Id,
             "CHAVE-IMPORT-CRUZADA",
             [new ItemNotaEntradaExternaRequest("EXT-CRUZ", "Produto Outra Empresa", 2m)],
             new Dictionary<string, Guid> { ["EXT-CRUZ"] = produto.Id })));
 
         Assert.Equal("Produto conciliado pertence a outra empresa.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_importar_nota_com_fornecedor_de_outra_empresa()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresaImportacao = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000128", "Empresa Fornecedor Compra", "Empresa Fornecedor Compra LTDA"));
+        var outraEmpresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000129", "Empresa Fornecedor Externo", "Empresa Fornecedor Externo LTDA"));
+        var fornecedor = service.CadastrarFornecedor(new CreateFornecedorRequest(outraEmpresa.Id, "22000000000129", "Fornecedor Externo", "fornecedorexterno@empresa.com"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresaImportacao.Id, "DEP-012", "Deposito Fornecedor"));
+
+        var exception = Assert.Throws<DomainException>(() => service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
+            empresaImportacao.Id,
+            fornecedor.Id,
+            deposito.Id,
+            "CHAVE-FORN-CRUZADA",
+            [new ItemNotaEntradaExternaRequest("EXT-F1", "Produto", 1m)],
+            new Dictionary<string, Guid>())));
+
+        Assert.Equal("Fornecedor informado pertence a outra empresa.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_importar_nota_com_fornecedor_inativo()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000130", "Empresa Fornecedor Inativo", "Empresa Fornecedor Inativo LTDA"));
+        var fornecedor = service.CadastrarFornecedor(new CreateFornecedorRequest(empresa.Id, "22000000000130", "Fornecedor Inativo", "fornecedorinativo@empresa.com"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-013", "Deposito Fornecedor Inativo"));
+        service.InativarFornecedor(fornecedor.Id);
+
+        var exception = Assert.Throws<DomainException>(() => service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
+            empresa.Id,
+            fornecedor.Id,
+            deposito.Id,
+            "CHAVE-FORN-INATIVO",
+            [new ItemNotaEntradaExternaRequest("EXT-F2", "Produto", 1m)],
+            new Dictionary<string, Guid>())));
+
+        Assert.Equal("Fornecedor inativo ou bloqueado nao pode operar.", exception.Message);
     }
 
     [Fact]

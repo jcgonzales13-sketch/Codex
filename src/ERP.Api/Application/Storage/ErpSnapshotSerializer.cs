@@ -7,6 +7,7 @@ using ERP.Modules.Depositos;
 using ERP.Modules.Empresas;
 using ERP.Modules.Estoque;
 using ERP.Modules.Fiscal;
+using ERP.Modules.Fornecedores;
 using ERP.Modules.Identity;
 using ERP.Modules.Vendas;
 
@@ -20,6 +21,7 @@ internal static class ErpSnapshotSerializer
     {
         var snapshot = new ErpSnapshot(
             store.Empresas.Values.Select(ToSnapshot).ToArray(),
+            store.Fornecedores.Values.Select(ToSnapshot).ToArray(),
             store.Produtos.Values.Select(ToSnapshot).ToArray(),
             store.Clientes.Values.Select(ToSnapshot).ToArray(),
             store.Depositos.Values.Select(ToSnapshot).ToArray(),
@@ -46,6 +48,7 @@ internal static class ErpSnapshotSerializer
         }
 
         store.Empresas.Clear();
+        store.Fornecedores.Clear();
         store.Produtos.Clear();
         store.Clientes.Clear();
         store.Depositos.Clear();
@@ -64,6 +67,12 @@ internal static class ErpSnapshotSerializer
         {
             var empresa = RestoreEmpresa(empresaSnapshot);
             store.Empresas[empresa.Id] = empresa;
+        }
+
+        foreach (var fornecedorSnapshot in snapshot.Fornecedores ?? Array.Empty<FornecedorSnapshot>())
+        {
+            var fornecedor = RestoreFornecedor(fornecedorSnapshot);
+            store.Fornecedores[fornecedor.Id] = fornecedor;
         }
 
         foreach (var produtoSnapshot in snapshot.Produtos ?? Array.Empty<ProdutoSnapshot>())
@@ -136,6 +145,7 @@ internal static class ErpSnapshotSerializer
         {
             store.ImportacoesNotaEntrada.Add(new ImportacaoNotaEntradaRegistro(
                 importacao.EmpresaId,
+                importacao.FornecedorId ?? Guid.Empty,
                 importacao.DepositoId,
                 importacao.ChaveAcesso,
                 importacao.ImportadaComSucesso,
@@ -188,6 +198,11 @@ internal static class ErpSnapshotSerializer
             produto.Ativo,
             produto.Variacoes.Select(variacao => new ProdutoVariacaoSnapshot(variacao.Sku, variacao.CodigoBarras, variacao.PrecoVenda)).ToArray(),
             produto.AuditoriasFiscais.Select(auditoria => new AuditChangeSnapshot(auditoria.Field, auditoria.PreviousValue, auditoria.CurrentValue)).ToArray());
+    }
+
+    private static FornecedorSnapshot ToSnapshot(Fornecedor fornecedor)
+    {
+        return new FornecedorSnapshot(fornecedor.Id, fornecedor.EmpresaId, fornecedor.Documento, fornecedor.Nome, fornecedor.Email, fornecedor.Status.ToString(), fornecedor.UltimoBloqueioEm);
     }
 
     private static UsuarioSnapshot ToSnapshot(Usuario usuario)
@@ -259,6 +274,7 @@ internal static class ErpSnapshotSerializer
     {
         return new ImportacaoNotaEntradaSnapshot(
             importacao.EmpresaId,
+            importacao.FornecedorId,
             importacao.DepositoId,
             importacao.ChaveAcesso,
             importacao.ImportadaComSucesso,
@@ -321,6 +337,27 @@ internal static class ErpSnapshotSerializer
 
         SetId(produto, snapshot.Id);
         return produto;
+    }
+
+    private static Fornecedor RestoreFornecedor(FornecedorSnapshot snapshot)
+    {
+        var fornecedor = new Fornecedor(snapshot.EmpresaId, snapshot.Documento, snapshot.Nome, snapshot.Email);
+        switch (snapshot.Status)
+        {
+            case nameof(StatusFornecedor.Inativo):
+                fornecedor.Inativar();
+                break;
+            case nameof(StatusFornecedor.Bloqueado):
+                fornecedor.Bloquear("Restaurado de persistencia");
+                if (snapshot.UltimoBloqueioEm is not null)
+                {
+                    SetBackingField(fornecedor, "<UltimoBloqueioEm>k__BackingField", snapshot.UltimoBloqueioEm);
+                }
+                break;
+        }
+
+        SetId(fornecedor, snapshot.Id);
+        return fornecedor;
     }
 
     private static Usuario RestoreUsuario(UsuarioSnapshot snapshot)
@@ -478,6 +515,7 @@ internal static class ErpSnapshotSerializer
 
     private sealed record ErpSnapshot(
         IReadOnlyCollection<EmpresaSnapshot> Empresas,
+        IReadOnlyCollection<FornecedorSnapshot>? Fornecedores,
         IReadOnlyCollection<ProdutoSnapshot> Produtos,
         IReadOnlyCollection<ClienteSnapshot> Clientes,
         IReadOnlyCollection<DepositoSnapshot> Depositos,
@@ -493,6 +531,7 @@ internal static class ErpSnapshotSerializer
         IReadOnlyCollection<IntegrationEventSnapshot> IntegrationEvents);
 
     private sealed record EmpresaSnapshot(Guid Id, string Documento, string NomeFantasia, string RazaoSocial, string Status);
+    private sealed record FornecedorSnapshot(Guid Id, Guid EmpresaId, string Documento, string Nome, string? Email, string Status, DateTimeOffset? UltimoBloqueioEm);
     private sealed record ProdutoSnapshot(Guid Id, Guid EmpresaId, string CodigoInterno, string Sku, string Descricao, string Tipo, decimal PrecoVenda, decimal Custo, string Ncm, string Origem, bool Ativo, IReadOnlyCollection<ProdutoVariacaoSnapshot> Variacoes, IReadOnlyCollection<AuditChangeSnapshot> AuditoriasFiscais);
     private sealed record ProdutoVariacaoSnapshot(string Sku, string? CodigoBarras, decimal? PrecoVenda);
     private sealed record AuditChangeSnapshot(string Field, string PreviousValue, string CurrentValue);
@@ -506,7 +545,7 @@ internal static class ErpSnapshotSerializer
     private sealed record SaldoSnapshot(Guid ProdutoId, Guid DepositoId, decimal SaldoAtual, decimal Reservado, bool PermiteSaldoNegativo);
     private sealed record MovimentoEstoqueSnapshot(Guid ProdutoId, Guid DepositoId, string Tipo, decimal Quantidade, string Motivo, string DocumentoOrigem, decimal SaldoAnterior, decimal SaldoPosterior, DateTimeOffset DataHora);
     private sealed record ChaveImportadaSnapshot(Guid EmpresaId, string ChaveAcesso);
-    private sealed record ImportacaoNotaEntradaSnapshot(Guid EmpresaId, Guid DepositoId, string ChaveAcesso, bool ImportadaComSucesso, int ItensExternos, int ItensPendentesConciliacao, int MovimentosGerados, DateTimeOffset ProcessadaEm);
+    private sealed record ImportacaoNotaEntradaSnapshot(Guid EmpresaId, Guid? FornecedorId, Guid DepositoId, string ChaveAcesso, bool ImportadaComSucesso, int ItensExternos, int ItensPendentesConciliacao, int MovimentosGerados, DateTimeOffset ProcessadaEm);
     private sealed record WebhookProcessadoSnapshot(string EventoId, string Origem, string Status, string Mensagem, DateTimeOffset ProcessadoEm);
     private sealed record IntegrationEventSnapshot(Guid Id, string Type, string SourceModule, string AggregateId, string Description, DateTimeOffset OccurredAt);
 }

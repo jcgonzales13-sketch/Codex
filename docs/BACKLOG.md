@@ -7,6 +7,7 @@
 - [x] Adicionar cadastro operacional basico de clientes.
 - [x] Adicionar cadastro operacional basico de depositos.
 - [x] Adicionar cadastro operacional basico de empresas.
+- [x] Adicionar cadastro operacional basico de fornecedores.
 - [x] Adicionar tratamento centralizado de excecoes de dominio e recurso nao encontrado.
 - [x] Disponibilizar armazenamento em memoria para uso imediato da API.
 - [ ] Adicionar exemplos de requisicao e resposta por modulo.
