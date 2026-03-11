@@ -7,6 +7,19 @@ public static class ErpEndpoints
 {
     public static IEndpointRouteBuilder MapErpEndpoints(this IEndpointRouteBuilder app)
     {
+        var empresas = app.MapGroup("/empresas").WithTags("Empresas");
+        empresas.MapGet(string.Empty, (string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ConsultarEmpresas(new ConsultarEmpresasRequest(status, termo, page ?? 1, pageSize ?? 20)))));
+        empresas.MapPost(string.Empty, (CreateEmpresaRequest request, ErpApplicationService service) =>
+        {
+            var response = service.CadastrarEmpresa(request);
+            return Results.Created($"/empresas/{response.Id}", ApiResponses.Ok(response));
+        });
+        empresas.MapPost("/{empresaId:guid}/atualizar", (Guid empresaId, AtualizarEmpresaRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.AtualizarEmpresa(empresaId, request))));
+        empresas.MapPost("/{empresaId:guid}/ativar", (Guid empresaId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.AtivarEmpresa(empresaId))));
+        empresas.MapPost("/{empresaId:guid}/inativar", (Guid empresaId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.InativarEmpresa(empresaId))));
+        empresas.MapPost("/{empresaId:guid}/bloquear", (Guid empresaId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.BloquearEmpresa(empresaId))));
+
         var catalogo = app.MapGroup("/catalogo").WithTags("Catalogo");
         catalogo.MapGet("/produtos", (Guid? empresaId, bool? ativo, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
             Results.Ok(ApiResponses.Ok(service.ConsultarProdutos(new ConsultarProdutosRequest(empresaId, ativo, termo, page ?? 1, pageSize ?? 20)))));
@@ -31,6 +44,18 @@ public static class ErpEndpoints
         clientes.MapPost("/{clienteId:guid}/ativar", (Guid clienteId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.AtivarCliente(clienteId))));
         clientes.MapPost("/{clienteId:guid}/inativar", (Guid clienteId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.InativarCliente(clienteId))));
         clientes.MapPost("/{clienteId:guid}/bloquear", (Guid clienteId, BloquearClienteRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.BloquearCliente(clienteId, request))));
+
+        var depositos = app.MapGroup("/depositos").WithTags("Depositos");
+        depositos.MapGet(string.Empty, (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ConsultarDepositos(new ConsultarDepositosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))));
+        depositos.MapPost(string.Empty, (CreateDepositoRequest request, ErpApplicationService service) =>
+        {
+            var response = service.CadastrarDeposito(request);
+            return Results.Created($"/depositos/{response.Id}", ApiResponses.Ok(response));
+        });
+        depositos.MapPost("/{depositoId:guid}/atualizar", (Guid depositoId, AtualizarDepositoRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.AtualizarDeposito(depositoId, request))));
+        depositos.MapPost("/{depositoId:guid}/ativar", (Guid depositoId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.AtivarDeposito(depositoId))));
+        depositos.MapPost("/{depositoId:guid}/inativar", (Guid depositoId, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.InativarDeposito(depositoId))));
 
         var identity = app.MapGroup("/identity").WithTags("Identity");
         identity.MapGet("/usuarios", (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>

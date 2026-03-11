@@ -8,8 +8,10 @@ A solucao esta organizada por modulos de negocio independentes, com uma API mini
 
 Modulos atuais:
 
+- Empresas: cadastro, bloqueio, inativacao e validacao do contexto operacional.
 - Catalogo: cadastro de produtos, variacoes e auditoria fiscal.
 - Clientes: cadastro, bloqueio, inativacao e consulta operacional de clientes.
+- Depositos: cadastro, ativacao, inativacao e validacao operacional de armazenagem.
 - Compras: importacao de nota de entrada com conciliacao de itens externos e reflexo em estoque.
 - Estoque: ajustes, reservas, baixas por faturamento e transferencias.
 - Vendas: aprovacao e reserva de pedidos.
@@ -23,8 +25,10 @@ Modulos atuais:
 src/
   ERP.Api
   ERP.BuildingBlocks
+  ERP.Modules.Empresas
   ERP.Modules.Catalogo
   ERP.Modules.Clientes
+  ERP.Modules.Depositos
   ERP.Modules.Compras
   ERP.Modules.Estoque
   ERP.Modules.Fiscal
@@ -32,8 +36,10 @@ src/
   ERP.Modules.Integracoes
   ERP.Modules.Vendas
 tests/
+  ERP.Modules.Empresas.UnitTests
   ERP.Modules.Catalogo.UnitTests
   ERP.Modules.Clientes.UnitTests
+  ERP.Modules.Depositos.UnitTests
   ERP.Modules.Compras.UnitTests
   ERP.Modules.Estoque.UnitTests
   ERP.Modules.Fiscal.UnitTests
@@ -78,8 +84,10 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /system/storage`
 - `GET /system/events`
 - `GET /estoque/movimentos`
+- `GET /empresas`
 - `GET /catalogo/produtos`
 - `GET /clientes`
+- `GET /depositos`
 - `GET /identity/usuarios`
 - `GET /compras/importacoes-nota-entrada`
 - `GET /vendas/pedidos`
@@ -100,7 +108,7 @@ Somente um modulo:
 dotnet test .\tests\ERP.Modules.Estoque.UnitTests\ERP.Modules.Estoque.UnitTests.csproj
 ```
 
-Observacao: no ambiente onde este repositorio foi preparado, o `dotnet test` chegou a falhar na etapa do runner/MSBuild sem erros de compilacao de codigo. Se isso acontecer na sua maquina, vale validar primeiro com `dotnet restore`, `dotnet build` e depois repetir o `dotnet test`.
+Observacao: no ambiente onde este repositorio foi preparado, o SDK .NET 9 pode falhar por interferencia do workload resolver. Se isso acontecer, execute os comandos com `MSBuildEnableWorkloadResolver=false`, por exemplo: `$env:MSBuildEnableWorkloadResolver='false'; dotnet test ERP.sln`.
 
 ## Endpoints da API
 
@@ -132,6 +140,10 @@ Retorna a trilha de eventos internos gerados pelas operacoes integradas entre mo
 
 Retorna o historico operacional de movimentos de estoque, com filtro opcional por produto e deposito.
 
+`GET /empresas`
+
+Retorna empresas com filtros opcionais por status, termo e paginacao.
+
 `GET /catalogo/produtos`
 
 Retorna produtos com filtros opcionais por empresa, status ativo, termo e paginacao.
@@ -139,6 +151,10 @@ Retorna produtos com filtros opcionais por empresa, status ativo, termo e pagina
 `GET /clientes`
 
 Retorna clientes com filtros opcionais por empresa, status, termo e paginacao.
+
+`GET /depositos`
+
+Retorna depositos com filtros opcionais por empresa, status, termo e paginacao.
 
 `GET /identity/usuarios`
 
@@ -163,7 +179,9 @@ Retorna o historico operacional de webhooks processados, com filtros por origem,
 Exemplos de consulta:
 
 - `GET /catalogo/produtos?ativo=true&page=1&pageSize=20&termo=SKU`
+- `GET /empresas?status=Ativa&page=1&pageSize=20&termo=Empresa`
 - `GET /clientes?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=Cliente`
+- `GET /depositos?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=DEP`
 - `GET /identity/usuarios?status=Ativo&page=1&pageSize=20&termo=usuario`
 - `GET /compras/importacoes-nota-entrada?empresaId={empresaId}&depositoId={depositoId}&importadaComSucesso=true&page=1&pageSize=20`
 - `GET /estoque/saldos?produtoId={produtoId}&depositoId={depositoId}&page=1&pageSize=20`
@@ -223,6 +241,6 @@ Este repositorio serve como base de estudo e evolucao para:
 ## Proximos Passos Sugeridos
 
 - adicionar persistencia real por modulo;
-- expor endpoints de negocio alem dos endpoints de diagnostico;
+- continuar substituindo identificadores soltos por cadastros operacionais reais;
 - configurar CI para `build` e `test`;
 - melhorar observabilidade e tratamento de erros na API.

@@ -1,5 +1,7 @@
 using ERP.Modules.Catalogo;
 using ERP.Modules.Clientes;
+using ERP.Modules.Depositos;
+using ERP.Modules.Empresas;
 using ERP.Modules.Estoque;
 using ERP.Modules.Fiscal;
 using ERP.Modules.Identity;
@@ -20,8 +22,10 @@ public sealed class JsonFileErpStore : IErpStore
     }
 
     public object SyncRoot { get; } = new();
+    public Dictionary<Guid, Empresa> Empresas { get; } = [];
     public Dictionary<Guid, Produto> Produtos { get; } = [];
     public Dictionary<Guid, Cliente> Clientes { get; } = [];
+    public Dictionary<Guid, Deposito> Depositos { get; } = [];
     public Dictionary<Guid, Usuario> Usuarios { get; } = [];
     public Dictionary<Guid, PedidoVenda> Pedidos { get; } = [];
     public Dictionary<Guid, NotaFiscal> NotasFiscais { get; } = [];

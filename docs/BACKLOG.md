@@ -5,6 +5,8 @@
 - [x] Remover template `WeatherForecast` da API.
 - [x] Criar endpoints iniciais de negocio para Catalogo, Identity, Estoque, Vendas, Compras, Fiscal e Integracoes.
 - [x] Adicionar cadastro operacional basico de clientes.
+- [x] Adicionar cadastro operacional basico de depositos.
+- [x] Adicionar cadastro operacional basico de empresas.
 - [x] Adicionar tratamento centralizado de excecoes de dominio e recurso nao encontrado.
 - [x] Disponibilizar armazenamento em memoria para uso imediato da API.
 - [ ] Adicionar exemplos de requisicao e resposta por modulo.
@@ -49,6 +51,7 @@
 ## Fase 6 - Qualidade Operacional
 
 - [ ] Adicionar CI para build e testes.
+- [ ] Ao montar o pipeline, lembrar de validar o comportamento do SDK com `MSBuildEnableWorkloadResolver=false` se o agente repetir o problema de workload resolver visto no ambiente local.
 - [ ] Adicionar logging estruturado.
 - [ ] Adicionar observabilidade, metricas e tracing.
 - [x] Adicionar health checks reais para o provider de storage.

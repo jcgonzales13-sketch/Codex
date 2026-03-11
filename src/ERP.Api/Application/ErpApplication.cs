@@ -5,6 +5,8 @@ using ERP.Api.Application.Storage;
 using ERP.Api.Application.Validation;
 using ERP.Modules.Catalogo;
 using ERP.Modules.Clientes;
+using ERP.Modules.Depositos;
+using ERP.Modules.Empresas;
 using ERP.Modules.Compras;
 using ERP.Modules.Estoque;
 using ERP.Modules.Fiscal;
@@ -18,6 +20,92 @@ public sealed class NotFoundException(string message) : Exception(message);
 
 public sealed class ErpApplicationService(IErpStore store)
 {
+    public PagedResponse<EmpresaResponse> ConsultarEmpresas(ConsultarEmpresasRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var query = store.Empresas.Values.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(request.Status) &&
+                Enum.TryParse<StatusEmpresa>(request.Status, true, out var status))
+            {
+                query = query.Where(item => item.Status == status);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Termo))
+            {
+                var termo = request.Termo.Trim();
+                query = query.Where(item =>
+                    item.Documento.Contains(termo, StringComparison.OrdinalIgnoreCase) ||
+                    item.NomeFantasia.Contains(termo, StringComparison.OrdinalIgnoreCase) ||
+                    item.RazaoSocial.Contains(termo, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return ToPagedResponse(query.Select(MapEmpresa), request.Page, request.PageSize);
+        }
+    }
+
+    public EmpresaResponse CadastrarEmpresa(CreateEmpresaRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Documento, "Documento");
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.NomeFantasia, "NomeFantasia");
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.RazaoSocial, "RazaoSocial");
+            var repository = new EmpresaRepository(store);
+            var service = new CadastroEmpresaService(repository);
+            var empresa = service.Cadastrar(request.Documento, request.NomeFantasia, request.RazaoSocial);
+            AddIntegrationEvent("empresas.empresa_cadastrada", "Empresas", empresa.Id.ToString(), $"Empresa {empresa.Documento} cadastrada.");
+            store.Persist();
+            return MapEmpresa(empresa);
+        }
+    }
+
+    public EmpresaResponse AtualizarEmpresa(Guid empresaId, AtualizarEmpresaRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.NomeFantasia, "NomeFantasia");
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.RazaoSocial, "RazaoSocial");
+            var empresa = GetEmpresa(empresaId);
+            empresa.AtualizarCadastro(request.NomeFantasia, request.RazaoSocial);
+            store.Persist();
+            return MapEmpresa(empresa);
+        }
+    }
+
+    public EmpresaResponse AtivarEmpresa(Guid empresaId)
+    {
+        lock (store.SyncRoot)
+        {
+            var empresa = GetEmpresa(empresaId);
+            empresa.Ativar();
+            store.Persist();
+            return MapEmpresa(empresa);
+        }
+    }
+
+    public EmpresaResponse InativarEmpresa(Guid empresaId)
+    {
+        lock (store.SyncRoot)
+        {
+            var empresa = GetEmpresa(empresaId);
+            empresa.Inativar();
+            store.Persist();
+            return MapEmpresa(empresa);
+        }
+    }
+
+    public EmpresaResponse BloquearEmpresa(Guid empresaId)
+    {
+        lock (store.SyncRoot)
+        {
+            var empresa = GetEmpresa(empresaId);
+            empresa.Bloquear();
+            store.Persist();
+            return MapEmpresa(empresa);
+        }
+    }
+
     public IReadOnlyCollection<ProdutoResponse> ListarProdutos()
     {
         lock (store.SyncRoot)
@@ -59,6 +147,7 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
+            _ = GetEmpresaOperacional(request.EmpresaId);
             ApplicationGuard.AgainstNullOrWhiteSpace(request.CodigoInterno, "CodigoInterno");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Sku, "Sku");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Descricao, "Descricao");
@@ -146,6 +235,7 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
+            _ = GetEmpresaOperacional(request.EmpresaId);
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Documento, "Documento");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
             var repository = new ClienteRepository(store);
@@ -203,6 +293,85 @@ public sealed class ErpApplicationService(IErpStore store)
         }
     }
 
+    public PagedResponse<DepositoResponse> ConsultarDepositos(ConsultarDepositosRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var query = store.Depositos.Values.AsEnumerable();
+            if (request.EmpresaId is not null)
+            {
+                query = query.Where(item => item.EmpresaId == request.EmpresaId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Status) &&
+                Enum.TryParse<StatusDeposito>(request.Status, true, out var status))
+            {
+                query = query.Where(item => item.Status == status);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Termo))
+            {
+                var termo = request.Termo.Trim();
+                query = query.Where(item =>
+                    item.Codigo.Contains(termo, StringComparison.OrdinalIgnoreCase) ||
+                    item.Nome.Contains(termo, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return ToPagedResponse(query.Select(MapDeposito), request.Page, request.PageSize);
+        }
+    }
+
+    public DepositoResponse CadastrarDeposito(CreateDepositoRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
+            _ = GetEmpresaOperacional(request.EmpresaId);
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Codigo, "Codigo");
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
+            var repository = new DepositoRepository(store);
+            var service = new CadastroDepositoService(repository);
+            var deposito = service.Cadastrar(request.EmpresaId, request.Codigo, request.Nome);
+            AddIntegrationEvent("depositos.deposito_cadastrado", "Depositos", deposito.Id.ToString(), $"Deposito {deposito.Codigo} cadastrado.");
+            store.Persist();
+            return MapDeposito(deposito);
+        }
+    }
+
+    public DepositoResponse AtualizarDeposito(Guid depositoId, AtualizarDepositoRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
+            var deposito = GetDeposito(depositoId);
+            deposito.AtualizarNome(request.Nome);
+            store.Persist();
+            return MapDeposito(deposito);
+        }
+    }
+
+    public DepositoResponse AtivarDeposito(Guid depositoId)
+    {
+        lock (store.SyncRoot)
+        {
+            var deposito = GetDeposito(depositoId);
+            deposito.Ativar();
+            store.Persist();
+            return MapDeposito(deposito);
+        }
+    }
+
+    public DepositoResponse InativarDeposito(Guid depositoId)
+    {
+        lock (store.SyncRoot)
+        {
+            var deposito = GetDeposito(depositoId);
+            deposito.Inativar();
+            store.Persist();
+            return MapDeposito(deposito);
+        }
+    }
+
     public IReadOnlyCollection<UsuarioResponse> ListarUsuarios()
     {
         lock (store.SyncRoot)
@@ -244,6 +413,7 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
+            _ = GetEmpresaOperacional(request.EmpresaId);
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Email, "Email");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
             var repository = new UsuarioRepository(store);
@@ -349,6 +519,9 @@ public sealed class ErpApplicationService(IErpStore store)
         {
             ApplicationGuard.AgainstEmptyGuid(request.ProdutoId, "ProdutoId");
             ApplicationGuard.AgainstEmptyGuid(request.DepositoId, "DepositoId");
+            var produto = GetProduto(request.ProdutoId);
+            var deposito = GetDepositoOperacional(request.DepositoId);
+            EnsureSameEmpresa(produto.EmpresaId, deposito.EmpresaId, "Produto e deposito devem pertencer a mesma empresa.");
             var key = (request.ProdutoId, request.DepositoId);
             if (store.Saldos.ContainsKey(key))
             {
@@ -368,6 +541,9 @@ public sealed class ErpApplicationService(IErpStore store)
         {
             ApplicationGuard.AgainstEmptyGuid(request.ProdutoId, "ProdutoId");
             ApplicationGuard.AgainstEmptyGuid(request.DepositoId, "DepositoId");
+            var produto = GetProduto(request.ProdutoId);
+            var deposito = GetDepositoOperacional(request.DepositoId);
+            EnsureSameEmpresa(produto.EmpresaId, deposito.EmpresaId, "Produto e deposito devem pertencer a mesma empresa.");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Motivo, "Motivo");
             var saldo = GetSaldo(request.ProdutoId, request.DepositoId);
             var movimento = saldo.Ajustar(request.Quantidade, request.Motivo);
@@ -383,6 +559,9 @@ public sealed class ErpApplicationService(IErpStore store)
         {
             ApplicationGuard.AgainstEmptyGuid(request.ProdutoId, "ProdutoId");
             ApplicationGuard.AgainstEmptyGuid(request.DepositoId, "DepositoId");
+            var produto = GetProduto(request.ProdutoId);
+            var deposito = GetDepositoOperacional(request.DepositoId);
+            EnsureSameEmpresa(produto.EmpresaId, deposito.EmpresaId, "Produto e deposito devem pertencer a mesma empresa.");
             ApplicationGuard.AgainstZeroOrNegative(request.Quantidade, "Quantidade");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.DocumentoOrigem, "DocumentoOrigem");
             var saldo = GetSaldo(request.ProdutoId, request.DepositoId);
@@ -399,6 +578,9 @@ public sealed class ErpApplicationService(IErpStore store)
         {
             ApplicationGuard.AgainstEmptyGuid(request.ProdutoId, "ProdutoId");
             ApplicationGuard.AgainstEmptyGuid(request.DepositoId, "DepositoId");
+            var produto = GetProduto(request.ProdutoId);
+            var deposito = GetDepositoOperacional(request.DepositoId);
+            EnsureSameEmpresa(produto.EmpresaId, deposito.EmpresaId, "Produto e deposito devem pertencer a mesma empresa.");
             ApplicationGuard.AgainstZeroOrNegative(request.Quantidade, "Quantidade");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.EventoId, "EventoId");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.DocumentoOrigem, "DocumentoOrigem");
@@ -417,6 +599,12 @@ public sealed class ErpApplicationService(IErpStore store)
             ApplicationGuard.AgainstEmptyGuid(request.ProdutoId, "ProdutoId");
             ApplicationGuard.AgainstEmptyGuid(request.DepositoOrigemId, "DepositoOrigemId");
             ApplicationGuard.AgainstEmptyGuid(request.DepositoDestinoId, "DepositoDestinoId");
+            var produto = GetProduto(request.ProdutoId);
+            var depositoOrigem = GetDepositoOperacional(request.DepositoOrigemId);
+            var depositoDestino = GetDepositoOperacional(request.DepositoDestinoId);
+            EnsureSameEmpresa(produto.EmpresaId, depositoOrigem.EmpresaId, "Produto e deposito de origem devem pertencer a mesma empresa.");
+            EnsureSameEmpresa(produto.EmpresaId, depositoDestino.EmpresaId, "Produto e deposito de destino devem pertencer a mesma empresa.");
+            EnsureSameEmpresa(depositoOrigem.EmpresaId, depositoDestino.EmpresaId, "Depositos de transferencia devem pertencer a mesma empresa.");
             ApplicationGuard.AgainstZeroOrNegative(request.Quantidade, "Quantidade");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.DocumentoOrigem, "DocumentoOrigem");
             var origem = GetSaldo(request.ProdutoId, request.DepositoOrigemId);
@@ -462,6 +650,7 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             ApplicationGuard.AgainstEmptyGuid(request.ClienteId, "ClienteId");
+            _ = GetCliente(request.ClienteId);
             var pedido = new PedidoVenda(request.ClienteId);
             store.Pedidos[pedido.Id] = pedido;
             store.Persist();
@@ -477,6 +666,10 @@ public sealed class ErpApplicationService(IErpStore store)
             ApplicationGuard.AgainstZeroOrNegative(request.Quantidade, "Quantidade");
             ApplicationGuard.AgainstNegative(request.PrecoUnitario, "PrecoUnitario");
             var pedido = GetPedido(pedidoId);
+            var cliente = GetCliente(pedido.ClienteId);
+            var produto = GetProduto(request.ProdutoId);
+            EnsureSameEmpresa(cliente.EmpresaId, produto.EmpresaId, "Produto informado pertence a outra empresa do pedido.");
+            EnsurePedidoPodeSerAlterado(pedido.Id);
             pedido.AdicionarItem(request.ProdutoId, request.Quantidade, request.PrecoUnitario);
             store.Persist();
             return MapPedido(pedido);
@@ -488,7 +681,9 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             var pedido = GetPedido(pedidoId);
-            pedido.Aprovar(request.ClienteAtivo);
+            var cliente = GetCliente(pedido.ClienteId);
+            var clienteAtivo = request.ClienteAtivo && cliente.Status == StatusCliente.Ativo;
+            pedido.Aprovar(clienteAtivo);
             store.Persist();
             return MapPedido(pedido);
         }
@@ -501,7 +696,10 @@ public sealed class ErpApplicationService(IErpStore store)
             return ExecuteInLogicalTransaction(() =>
             {
                 ApplicationGuard.AgainstEmptyGuid(request.DepositoId, "DepositoId");
+                var deposito = GetDepositoOperacional(request.DepositoId);
                 var pedido = GetPedido(pedidoId);
+                var cliente = GetCliente(pedido.ClienteId);
+                EnsureSameEmpresa(cliente.EmpresaId, deposito.EmpresaId, "Deposito informado pertence a outra empresa do pedido.");
 
                 if (pedido.Status == StatusPedidoVenda.Reservado || pedido.Status == StatusPedidoVenda.Faturado)
                 {
@@ -510,6 +708,8 @@ public sealed class ErpApplicationService(IErpStore store)
 
                 pedido.Reservar((produtoId, quantidade) =>
                 {
+                    var produto = GetProduto(produtoId);
+                    EnsureSameEmpresa(cliente.EmpresaId, produto.EmpresaId, "Produto informado pertence a outra empresa do pedido.");
                     var key = (produtoId, request.DepositoId);
                     return store.Saldos.TryGetValue(key, out var saldo) && saldo.Disponivel >= quantidade;
                 });
@@ -540,12 +740,18 @@ public sealed class ErpApplicationService(IErpStore store)
                     return MapPedido(pedido);
                 }
 
+                EnsurePedidoPodeSerAlterado(pedido.Id);
+
                 if (request.LiberarReservaEstoque && pedido.Status == StatusPedidoVenda.Reservado)
                 {
                     if (request.DepositoId is null || request.DepositoId == Guid.Empty)
                     {
                         throw new DomainException("DepositoId e obrigatorio para liberar reserva de estoque.");
                     }
+
+                    var deposito = GetDepositoOperacional(request.DepositoId.Value);
+                    var cliente = GetCliente(pedido.ClienteId);
+                    EnsureSameEmpresa(cliente.EmpresaId, deposito.EmpresaId, "Deposito informado pertence a outra empresa do pedido.");
 
                     foreach (var item in pedido.Itens)
                     {
@@ -571,7 +777,10 @@ public sealed class ErpApplicationService(IErpStore store)
             return ExecuteInLogicalTransaction(() =>
             {
                 ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
+                var empresa = GetEmpresaOperacional(request.EmpresaId);
                 ApplicationGuard.AgainstEmptyGuid(request.DepositoId, "DepositoId");
+                var deposito = GetDepositoOperacional(request.DepositoId);
+                EnsureSameEmpresa(empresa.Id, deposito.EmpresaId, "Deposito informado pertence a outra empresa.");
                 ApplicationGuard.AgainstNullOrWhiteSpace(request.ChaveAcesso, "ChaveAcesso");
                 ApplicationGuard.AgainstEmptyCollection(request.ItensExternos, "ItensExternos");
                 var repository = new NotaEntradaRepository(store);
@@ -588,6 +797,8 @@ public sealed class ErpApplicationService(IErpStore store)
                     foreach (var item in request.ItensExternos)
                     {
                         var produtoId = request.Conciliacoes[item.CodigoExterno];
+                        var produto = GetProduto(produtoId);
+                        EnsureSameEmpresa(empresa.Id, produto.EmpresaId, "Produto conciliado pertence a outra empresa.");
                         var saldo = GetOrCreateSaldoParaEntrada(produtoId, request.DepositoId);
                         var movimento = saldo.Ajustar(item.Quantidade, $"Entrada por nota importada {request.ChaveAcesso}");
                         AddStockMovement(movimento);
@@ -687,6 +898,37 @@ public sealed class ErpApplicationService(IErpStore store)
             ApplicationGuard.AgainstEmptyGuid(request.PedidoVendaId, "PedidoVendaId");
             ApplicationGuard.AgainstEmptyGuid(request.ClienteId, "ClienteId");
             ApplicationGuard.AgainstEmptyCollection(request.Itens, "Itens");
+            var pedido = GetPedido(request.PedidoVendaId);
+            var clienteNota = GetCliente(request.ClienteId);
+            var clientePedido = GetCliente(pedido.ClienteId);
+            EnsureSameEmpresa(clientePedido.EmpresaId, clienteNota.EmpresaId, "Cliente informado pertence a outra empresa do pedido.");
+            if (pedido.ClienteId != request.ClienteId)
+            {
+                throw new DomainException("Cliente informado para a nota fiscal difere do cliente do pedido.");
+            }
+
+            if (HasNotaFiscalAtivaParaPedido(pedido.Id))
+            {
+                throw new DomainException("Pedido ja possui nota fiscal ativa vinculada.");
+            }
+
+            if (pedido.Status == StatusPedidoVenda.Cancelado)
+            {
+                throw new DomainException("Pedido cancelado nao pode gerar nota fiscal.");
+            }
+
+            foreach (var item in request.Itens)
+            {
+                ApplicationGuard.AgainstEmptyGuid(item.ProdutoId, "ProdutoId");
+                ApplicationGuard.AgainstZeroOrNegative(item.Quantidade, "Quantidade");
+                ApplicationGuard.AgainstNullOrWhiteSpace(item.Ncm, "Ncm");
+                ApplicationGuard.AgainstNullOrWhiteSpace(item.Cfop, "Cfop");
+                var produto = GetProduto(item.ProdutoId);
+                EnsureSameEmpresa(clientePedido.EmpresaId, produto.EmpresaId, "Produto informado pertence a outra empresa do pedido.");
+            }
+
+            EnsureNotaFiscalMatchesPedido(pedido, request.Itens);
+
             var itens = request.Itens.Select(item => new ItemNotaFiscal(item.ProdutoId, item.Quantidade, item.Ncm, item.Cfop)).ToArray();
             var nota = new NotaFiscal(request.PedidoVendaId, request.ClienteId, itens);
             store.NotasFiscais[nota.Id] = nota;
@@ -702,8 +944,11 @@ public sealed class ErpApplicationService(IErpStore store)
             return ExecuteInLogicalTransaction(() =>
             {
                 ApplicationGuard.AgainstEmptyGuid(request.DepositoId, "DepositoId");
+                var deposito = GetDepositoOperacional(request.DepositoId);
                 ApplicationGuard.AgainstNullOrWhiteSpace(request.EventoId, "EventoId");
                 var nota = GetNotaFiscal(notaFiscalId);
+                var cliente = GetCliente(nota.ClienteId);
+                EnsureSameEmpresa(cliente.EmpresaId, deposito.EmpresaId, "Deposito informado pertence a outra empresa da nota fiscal.");
                 if (nota.Status == StatusNotaFiscal.Autorizada)
                 {
                     return MapNotaFiscal(nota);
@@ -859,6 +1104,23 @@ public sealed class ErpApplicationService(IErpStore store)
         return produto;
     }
 
+    private Empresa GetEmpresa(Guid empresaId)
+    {
+        if (!store.Empresas.TryGetValue(empresaId, out var empresa))
+        {
+            throw new NotFoundException("Empresa nao encontrada.");
+        }
+
+        return empresa;
+    }
+
+    private Empresa GetEmpresaOperacional(Guid empresaId)
+    {
+        var empresa = GetEmpresa(empresaId);
+        empresa.GarantirQuePodeOperar();
+        return empresa;
+    }
+
     private Usuario GetUsuario(Guid usuarioId)
     {
         if (!store.Usuarios.TryGetValue(usuarioId, out var usuario))
@@ -877,6 +1139,23 @@ public sealed class ErpApplicationService(IErpStore store)
         }
 
         return cliente;
+    }
+
+    private Deposito GetDeposito(Guid depositoId)
+    {
+        if (!store.Depositos.TryGetValue(depositoId, out var deposito))
+        {
+            throw new NotFoundException("Deposito nao encontrado.");
+        }
+
+        return deposito;
+    }
+
+    private Deposito GetDepositoOperacional(Guid depositoId)
+    {
+        var deposito = GetDeposito(depositoId);
+        deposito.GarantirQuePodeOperar();
+        return deposito;
     }
 
     private PedidoVenda GetPedido(Guid pedidoId)
@@ -947,6 +1226,16 @@ public sealed class ErpApplicationService(IErpStore store)
     private static ClienteResponse MapCliente(Cliente cliente)
     {
         return new ClienteResponse(cliente.Id, cliente.EmpresaId, cliente.Documento, cliente.Nome, cliente.Email, cliente.Status.ToString(), cliente.UltimoBloqueioEm);
+    }
+
+    private static EmpresaResponse MapEmpresa(Empresa empresa)
+    {
+        return new EmpresaResponse(empresa.Id, empresa.Documento, empresa.NomeFantasia, empresa.RazaoSocial, empresa.Status.ToString());
+    }
+
+    private static DepositoResponse MapDeposito(Deposito deposito)
+    {
+        return new DepositoResponse(deposito.Id, deposito.EmpresaId, deposito.Codigo, deposito.Nome, deposito.Status.ToString());
     }
 
     private static ImportacaoNotaEntradaResponse MapImportacaoNotaEntrada(ImportacaoNotaEntradaRegistro importacao)
@@ -1028,6 +1317,52 @@ public sealed class ErpApplicationService(IErpStore store)
         return new PagedResponse<T>(pagedItems, normalizedPage, normalizedPageSize, materialized.Length);
     }
 
+    private bool HasNotaFiscalAtivaParaPedido(Guid pedidoId)
+    {
+        return store.NotasFiscais.Values.Any(item =>
+            item.PedidoVendaId == pedidoId &&
+            item.Status != StatusNotaFiscal.Cancelada);
+    }
+
+    private void EnsurePedidoPodeSerAlterado(Guid pedidoId)
+    {
+        if (HasNotaFiscalAtivaParaPedido(pedidoId))
+        {
+            throw new DomainException("Pedido com nota fiscal vinculada nao pode ser alterado.");
+        }
+    }
+
+    private static void EnsureSameEmpresa(Guid expectedEmpresaId, Guid actualEmpresaId, string message)
+    {
+        if (expectedEmpresaId != actualEmpresaId)
+        {
+            throw new DomainException(message);
+        }
+    }
+
+    private static void EnsureNotaFiscalMatchesPedido(PedidoVenda pedido, IReadOnlyCollection<ItemNotaFiscalRequest> itensNota)
+    {
+        var itensPedido = pedido.Itens
+            .GroupBy(item => item.ProdutoId)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Quantidade));
+        var itensSolicitados = itensNota
+            .GroupBy(item => item.ProdutoId)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Quantidade));
+
+        if (itensPedido.Count != itensSolicitados.Count)
+        {
+            throw new DomainException("Itens da nota fiscal diferem dos itens do pedido.");
+        }
+
+        foreach (var itemPedido in itensPedido)
+        {
+            if (!itensSolicitados.TryGetValue(itemPedido.Key, out var quantidadeNota) || quantidadeNota != itemPedido.Value)
+            {
+                throw new DomainException("Itens da nota fiscal diferem dos itens do pedido.");
+            }
+        }
+    }
+
     private void AddIntegrationEvent(string type, string sourceModule, string aggregateId, string description)
     {
         store.IntegrationEvents.Add(new IntegrationEvent(
@@ -1060,6 +1395,14 @@ public sealed class ErpApplicationService(IErpStore store)
         }
     }
 
+    private sealed class EmpresaRepository(IErpStore store) : IEmpresaRepository
+    {
+        public bool DocumentoJaExiste(string documento) =>
+            store.Empresas.Values.Any(empresa => string.Equals(empresa.Documento, documento.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        public void Add(Empresa empresa) => store.Empresas[empresa.Id] = empresa;
+    }
+
     private sealed class ProdutoRepository(IErpStore store) : IProdutoRepository
     {
         public bool SkuJaExiste(Guid empresaId, string sku) =>
@@ -1074,6 +1417,14 @@ public sealed class ErpApplicationService(IErpStore store)
             store.Clientes.Values.Any(cliente => cliente.EmpresaId == empresaId && string.Equals(cliente.Documento, documento.Trim(), StringComparison.OrdinalIgnoreCase));
 
         public void Add(Cliente cliente) => store.Clientes[cliente.Id] = cliente;
+    }
+
+    private sealed class DepositoRepository(IErpStore store) : IDepositoRepository
+    {
+        public bool CodigoJaExiste(Guid empresaId, string codigo) =>
+            store.Depositos.Values.Any(deposito => deposito.EmpresaId == empresaId && string.Equals(deposito.Codigo, codigo.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        public void Add(Deposito deposito) => store.Depositos[deposito.Id] = deposito;
     }
 
     private sealed class UsuarioRepository(IErpStore store) : IUsuarioRepository

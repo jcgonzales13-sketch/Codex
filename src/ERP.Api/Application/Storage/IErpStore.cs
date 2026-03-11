@@ -1,5 +1,7 @@
 using ERP.Modules.Catalogo;
 using ERP.Modules.Clientes;
+using ERP.Modules.Depositos;
+using ERP.Modules.Empresas;
 using ERP.Modules.Estoque;
 using ERP.Modules.Fiscal;
 using ERP.Modules.Identity;
@@ -11,8 +13,10 @@ namespace ERP.Api.Application.Storage;
 public interface IErpStore
 {
     object SyncRoot { get; }
+    Dictionary<Guid, Empresa> Empresas { get; }
     Dictionary<Guid, Produto> Produtos { get; }
     Dictionary<Guid, Cliente> Clientes { get; }
+    Dictionary<Guid, Deposito> Depositos { get; }
     Dictionary<Guid, Usuario> Usuarios { get; }
     Dictionary<Guid, PedidoVenda> Pedidos { get; }
     Dictionary<Guid, NotaFiscal> NotasFiscais { get; }

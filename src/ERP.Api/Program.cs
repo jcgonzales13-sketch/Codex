@@ -5,7 +5,6 @@ using ERP.Api.Application.Storage;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddExceptionHandler();
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -35,7 +34,7 @@ app.MapGet("/", () => Results.Ok(ApiResponses.Ok(new
     application = "ERP.Api",
     status = "online",
     storage = builder.Configuration.GetSection(StorageOptions.SectionName).GetValue<string>("Provider") ?? "InMemory",
-    modules = new[] { "Catalogo", "Clientes", "Compras", "Estoque", "Vendas", "Fiscal", "Identity", "Integracoes" }
+    modules = new[] { "Empresas", "Catalogo", "Clientes", "Depositos", "Compras", "Estoque", "Vendas", "Fiscal", "Identity", "Integracoes" }
 })));
 
 app.MapGet("/health", () => Results.Ok(ApiResponses.Ok(new
@@ -64,8 +63,10 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
 
 app.MapGet("/modules", () => Results.Ok(ApiResponses.Ok(new[]
 {
+    new { Name = "Empresas", Capability = "Cadastro de empresas e validacao do contexto operacional" },
     new { Name = "Catalogo", Capability = "Cadastro de produtos, variacoes e auditoria fiscal" },
     new { Name = "Clientes", Capability = "Cadastro de clientes, bloqueio e consulta operacional" },
+    new { Name = "Depositos", Capability = "Cadastro de depositos e validacao operacional de armazenagem" },
     new { Name = "Compras", Capability = "Importacao de nota de entrada com conciliacao" },
     new { Name = "Estoque", Capability = "Ajustes, reservas, baixas e transferencias" },
     new { Name = "Vendas", Capability = "Aprovacao e reserva de pedidos" },
@@ -78,8 +79,10 @@ app.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.IOp
     Results.Ok(ApiResponses.Ok(new StorageStatusResponse(
         options.Value.Provider,
         options.Value.FilePath,
+        store.Empresas.Count,
         store.Produtos.Count,
         store.Clientes.Count,
+        store.Depositos.Count,
         store.Usuarios.Count,
         store.Pedidos.Count,
         store.NotasFiscais.Count,

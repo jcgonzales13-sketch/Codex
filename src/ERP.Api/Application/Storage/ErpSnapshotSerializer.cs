@@ -3,6 +3,8 @@ using System.Text.Json;
 using ERP.Api.Application.Integration;
 using ERP.Modules.Catalogo;
 using ERP.Modules.Clientes;
+using ERP.Modules.Depositos;
+using ERP.Modules.Empresas;
 using ERP.Modules.Estoque;
 using ERP.Modules.Fiscal;
 using ERP.Modules.Identity;
@@ -17,8 +19,10 @@ internal static class ErpSnapshotSerializer
     public static string Serialize(IErpStore store)
     {
         var snapshot = new ErpSnapshot(
+            store.Empresas.Values.Select(ToSnapshot).ToArray(),
             store.Produtos.Values.Select(ToSnapshot).ToArray(),
             store.Clientes.Values.Select(ToSnapshot).ToArray(),
+            store.Depositos.Values.Select(ToSnapshot).ToArray(),
             store.Usuarios.Values.Select(ToSnapshot).ToArray(),
             store.Pedidos.Values.Select(ToSnapshot).ToArray(),
             store.NotasFiscais.Values.Select(ToSnapshot).ToArray(),
@@ -41,8 +45,10 @@ internal static class ErpSnapshotSerializer
             return;
         }
 
+        store.Empresas.Clear();
         store.Produtos.Clear();
         store.Clientes.Clear();
+        store.Depositos.Clear();
         store.Usuarios.Clear();
         store.Pedidos.Clear();
         store.NotasFiscais.Clear();
@@ -54,6 +60,12 @@ internal static class ErpSnapshotSerializer
         store.WebhooksProcessados.Clear();
         store.IntegrationEvents.Clear();
 
+        foreach (var empresaSnapshot in snapshot.Empresas ?? Array.Empty<EmpresaSnapshot>())
+        {
+            var empresa = RestoreEmpresa(empresaSnapshot);
+            store.Empresas[empresa.Id] = empresa;
+        }
+
         foreach (var produtoSnapshot in snapshot.Produtos ?? Array.Empty<ProdutoSnapshot>())
         {
             var produto = RestoreProduto(produtoSnapshot);
@@ -64,6 +76,12 @@ internal static class ErpSnapshotSerializer
         {
             var cliente = RestoreCliente(clienteSnapshot);
             store.Clientes[cliente.Id] = cliente;
+        }
+
+        foreach (var depositoSnapshot in snapshot.Depositos ?? Array.Empty<DepositoSnapshot>())
+        {
+            var deposito = RestoreDeposito(depositoSnapshot);
+            store.Depositos[deposito.Id] = deposito;
         }
 
         foreach (var usuarioSnapshot in snapshot.Usuarios ?? Array.Empty<UsuarioSnapshot>())
@@ -149,6 +167,11 @@ internal static class ErpSnapshotSerializer
         }
     }
 
+    private static EmpresaSnapshot ToSnapshot(Empresa empresa)
+    {
+        return new EmpresaSnapshot(empresa.Id, empresa.Documento, empresa.NomeFantasia, empresa.RazaoSocial, empresa.Status.ToString());
+    }
+
     private static ProdutoSnapshot ToSnapshot(Produto produto)
     {
         return new ProdutoSnapshot(
@@ -175,6 +198,11 @@ internal static class ErpSnapshotSerializer
     private static ClienteSnapshot ToSnapshot(Cliente cliente)
     {
         return new ClienteSnapshot(cliente.Id, cliente.EmpresaId, cliente.Documento, cliente.Nome, cliente.Email, cliente.Status.ToString(), cliente.UltimoBloqueioEm);
+    }
+
+    private static DepositoSnapshot ToSnapshot(Deposito deposito)
+    {
+        return new DepositoSnapshot(deposito.Id, deposito.EmpresaId, deposito.Codigo, deposito.Nome, deposito.Status.ToString());
     }
 
     private static PedidoSnapshot ToSnapshot(PedidoVenda pedido)
@@ -250,10 +278,27 @@ internal static class ErpSnapshotSerializer
             webhook.ProcessadoEm);
     }
 
+    private static Empresa RestoreEmpresa(EmpresaSnapshot snapshot)
+    {
+        var empresa = new Empresa(snapshot.Documento, snapshot.NomeFantasia, snapshot.RazaoSocial);
+        switch (snapshot.Status)
+        {
+            case nameof(StatusEmpresa.Inativa):
+                empresa.Inativar();
+                break;
+            case nameof(StatusEmpresa.Bloqueada):
+                empresa.Bloquear();
+                break;
+        }
+
+        SetId(empresa, snapshot.Id);
+        return empresa;
+    }
+
     private static Produto RestoreProduto(ProdutoSnapshot snapshot)
     {
         var dadosIniciais = snapshot.AuditoriasFiscais.Count > 0
-            ? ParseFiscal(snapshot.AuditoriasFiscais[0].PreviousValue)
+            ? ParseFiscal(snapshot.AuditoriasFiscais.First().PreviousValue)
             : (snapshot.Ncm, snapshot.Origem);
 
         var produto = new Produto(snapshot.EmpresaId, snapshot.CodigoInterno, snapshot.Sku, snapshot.Descricao, Enum.Parse<TipoProduto>(snapshot.Tipo), snapshot.PrecoVenda, snapshot.Custo, dadosIniciais.Ncm, dadosIniciais.Origem);
@@ -328,6 +373,18 @@ internal static class ErpSnapshotSerializer
 
         SetId(cliente, snapshot.Id);
         return cliente;
+    }
+
+    private static Deposito RestoreDeposito(DepositoSnapshot snapshot)
+    {
+        var deposito = new Deposito(snapshot.EmpresaId, snapshot.Codigo, snapshot.Nome);
+        if (string.Equals(snapshot.Status, nameof(StatusDeposito.Inativo), StringComparison.OrdinalIgnoreCase))
+        {
+            deposito.Inativar();
+        }
+
+        SetId(deposito, snapshot.Id);
+        return deposito;
     }
 
     private static PedidoVenda RestorePedido(PedidoSnapshot snapshot)
@@ -420,8 +477,10 @@ internal static class ErpSnapshotSerializer
     }
 
     private sealed record ErpSnapshot(
+        IReadOnlyCollection<EmpresaSnapshot> Empresas,
         IReadOnlyCollection<ProdutoSnapshot> Produtos,
         IReadOnlyCollection<ClienteSnapshot> Clientes,
+        IReadOnlyCollection<DepositoSnapshot> Depositos,
         IReadOnlyCollection<UsuarioSnapshot> Usuarios,
         IReadOnlyCollection<PedidoSnapshot> Pedidos,
         IReadOnlyCollection<NotaFiscalSnapshot> NotasFiscais,
@@ -433,10 +492,12 @@ internal static class ErpSnapshotSerializer
         IReadOnlyCollection<WebhookProcessadoSnapshot> WebhooksProcessados,
         IReadOnlyCollection<IntegrationEventSnapshot> IntegrationEvents);
 
+    private sealed record EmpresaSnapshot(Guid Id, string Documento, string NomeFantasia, string RazaoSocial, string Status);
     private sealed record ProdutoSnapshot(Guid Id, Guid EmpresaId, string CodigoInterno, string Sku, string Descricao, string Tipo, decimal PrecoVenda, decimal Custo, string Ncm, string Origem, bool Ativo, IReadOnlyCollection<ProdutoVariacaoSnapshot> Variacoes, IReadOnlyCollection<AuditChangeSnapshot> AuditoriasFiscais);
     private sealed record ProdutoVariacaoSnapshot(string Sku, string? CodigoBarras, decimal? PrecoVenda);
     private sealed record AuditChangeSnapshot(string Field, string PreviousValue, string CurrentValue);
     private sealed record ClienteSnapshot(Guid Id, Guid EmpresaId, string Documento, string Nome, string? Email, string Status, DateTimeOffset? UltimoBloqueioEm);
+    private sealed record DepositoSnapshot(Guid Id, Guid EmpresaId, string Codigo, string Nome, string Status);
     private sealed record UsuarioSnapshot(Guid Id, Guid EmpresaId, string Email, string Nome, string Status, DateTimeOffset? UltimoBloqueioEm, IReadOnlyCollection<string> Permissoes);
     private sealed record PedidoSnapshot(Guid Id, Guid ClienteId, string Status, IReadOnlyCollection<ItemPedidoSnapshot> Itens);
     private sealed record ItemPedidoSnapshot(Guid ProdutoId, decimal Quantidade, decimal PrecoUnitario);

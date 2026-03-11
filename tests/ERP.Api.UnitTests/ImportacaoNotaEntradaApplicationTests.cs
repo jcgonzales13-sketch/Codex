@@ -1,7 +1,9 @@
 using ERP.Api.Application;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Storage;
+using ERP.BuildingBlocks;
 using ERP.Modules.Catalogo;
+using ERP.Modules.Fiscal;
 
 namespace ERP.Api.UnitTests;
 
@@ -12,8 +14,10 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000101", "Empresa Principal", "Empresa Principal LTDA"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-001", "Deposito Principal"));
         var produto = service.CadastrarProduto(new CreateProdutoRequest(
-            Guid.NewGuid(),
+            empresa.Id,
             "P001",
             "SKU-001",
             "Produto teste",
@@ -23,10 +27,9 @@ public sealed class ImportacaoNotaEntradaApplicationTests
             "12345678",
             "0"));
 
-        var depositoId = Guid.NewGuid();
         var resultado = service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
             produto.EmpresaId,
-            depositoId,
+            deposito.Id,
             "CHAVE-IMPORT-1",
             [new ItemNotaEntradaExternaRequest("EXT-1", "Produto externo", 3m)],
             new Dictionary<string, Guid> { ["EXT-1"] = produto.Id }));
@@ -34,12 +37,12 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         Assert.True(resultado.ImportadaComSucesso);
         var movimento = Assert.Single(resultado.MovimentosEstoqueGerados);
         Assert.Equal(produto.Id, movimento.ProdutoId);
-        Assert.Equal(depositoId, movimento.DepositoId);
+        Assert.Equal(deposito.Id, movimento.DepositoId);
         Assert.Equal(3m, movimento.Quantidade);
 
         var saldo = Assert.Single(service.ListarSaldos());
         Assert.Equal(3m, saldo.SaldoAtual);
-        var movimentoEstoque = Assert.Single(service.ListarMovimentosEstoque(new ConsultarMovimentosEstoqueRequest(produto.Id, depositoId)));
+        var movimentoEstoque = Assert.Single(service.ListarMovimentosEstoque(new ConsultarMovimentosEstoqueRequest(produto.Id, deposito.Id)));
         Assert.Equal(3m, movimentoEstoque.Quantidade);
     }
 
@@ -48,10 +51,12 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000119", "Empresa Pendencia", "Empresa Pendencia LTDA"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-007", "Deposito Pendencia"));
 
         var resultado = service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
+            empresa.Id,
+            deposito.Id,
             "CHAVE-IMPORT-2",
             [new ItemNotaEntradaExternaRequest("EXT-2", "Produto externo", 2m)],
             new Dictionary<string, Guid>()));
@@ -66,12 +71,12 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
-        var empresaId = Guid.NewGuid();
-        var clienteId = Guid.NewGuid();
-        var depositoId = Guid.NewGuid();
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000102", "Empresa Evento", "Empresa Evento LTDA"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-002", "Deposito Evento"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000001", "Cliente Evento", "evento@empresa.com"));
 
         var produto = service.CadastrarProduto(new CreateProdutoRequest(
-            empresaId,
+            empresa.Id,
             "P003",
             "SKU-003",
             "Produto evento",
@@ -82,16 +87,16 @@ public sealed class ImportacaoNotaEntradaApplicationTests
             "0"));
 
         service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
-            empresaId,
-            depositoId,
+            empresa.Id,
+            deposito.Id,
             "CHAVE-EVT-1",
             [new ItemNotaEntradaExternaRequest("EXT-3", "Produto evento", 5m)],
             new Dictionary<string, Guid> { ["EXT-3"] = produto.Id }));
 
-        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(clienteId));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
         service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 2m, 20m));
         service.AprovarPedido(pedido.Id, new AprovarPedidoRequest(true));
-        service.ReservarPedido(pedido.Id, new ReservarPedidoRequest(depositoId));
+        service.ReservarPedido(pedido.Id, new ReservarPedidoRequest(deposito.Id));
 
         var eventos = service.ListarEventosIntegracao();
 
@@ -105,11 +110,11 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
-        var empresaId = Guid.NewGuid();
-        var clienteId = Guid.NewGuid();
-        var depositoId = Guid.NewGuid();
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000103", "Empresa Nota", "Empresa Nota LTDA"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-003", "Deposito Nota"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000002", "Cliente Nota", "nota@empresa.com"));
         var produto = service.CadastrarProduto(new CreateProdutoRequest(
-            empresaId,
+            empresa.Id,
             "P002",
             "SKU-002",
             "Produto teste",
@@ -119,18 +124,18 @@ public sealed class ImportacaoNotaEntradaApplicationTests
             "12345678",
             "0"));
 
-        service.CriarSaldo(new CriarSaldoEstoqueRequest(produto.Id, depositoId, 5m, false));
-        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(clienteId));
+        service.CriarSaldo(new CriarSaldoEstoqueRequest(produto.Id, deposito.Id, 5m, false));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
         service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 2m, 10m));
         service.AprovarPedido(pedido.Id, new AprovarPedidoRequest(true));
-        service.ReservarPedido(pedido.Id, new ReservarPedidoRequest(depositoId));
+        service.ReservarPedido(pedido.Id, new ReservarPedidoRequest(deposito.Id));
         var nota = service.CriarNotaFiscal(new CreateNotaFiscalRequest(
             pedido.Id,
-            clienteId,
+            cliente.Id,
             [new ItemNotaFiscalRequest(produto.Id, 2m, "12345678", "5102")]));
 
-        service.AutorizarNotaFiscal(nota.Id, new AutorizarNotaFiscalRequest(depositoId, "evt-repetido"));
-        var segundaResposta = service.AutorizarNotaFiscal(nota.Id, new AutorizarNotaFiscalRequest(depositoId, "evt-repetido"));
+        service.AutorizarNotaFiscal(nota.Id, new AutorizarNotaFiscalRequest(deposito.Id, "evt-repetido"));
+        var segundaResposta = service.AutorizarNotaFiscal(nota.Id, new AutorizarNotaFiscalRequest(deposito.Id, "evt-repetido"));
 
         var saldo = Assert.Single(service.ListarSaldos());
         Assert.Equal(3m, saldo.SaldoAtual);
@@ -142,20 +147,20 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
-        var empresaId = Guid.NewGuid();
-        var clienteId = Guid.NewGuid();
-        var depositoId = Guid.NewGuid();
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000104", "Empresa Reserva", "Empresa Reserva LTDA"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-004", "Deposito Reserva"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000003", "Cliente Reserva", "reserva@empresa.com"));
 
-        var produto1 = service.CadastrarProduto(new CreateProdutoRequest(empresaId, "P010", "SKU-010", "Produto 1", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
-        var produto2 = service.CadastrarProduto(new CreateProdutoRequest(empresaId, "P011", "SKU-011", "Produto 2", TipoProduto.Simples, 20m, 10m, "12345678", "0"));
-        service.CriarSaldo(new CriarSaldoEstoqueRequest(produto1.Id, depositoId, 5m, false));
+        var produto1 = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P010", "SKU-010", "Produto 1", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var produto2 = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P011", "SKU-011", "Produto 2", TipoProduto.Simples, 20m, 10m, "12345678", "0"));
+        service.CriarSaldo(new CriarSaldoEstoqueRequest(produto1.Id, deposito.Id, 5m, false));
 
-        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(clienteId));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
         service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto1.Id, 1m, 10m));
         service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto2.Id, 1m, 20m));
         service.AprovarPedido(pedido.Id, new AprovarPedidoRequest(true));
 
-        var exception = Assert.Throws<DomainException>(() => service.ReservarPedido(pedido.Id, new ReservarPedidoRequest(depositoId)));
+        var exception = Assert.Throws<DomainException>(() => service.ReservarPedido(pedido.Id, new ReservarPedidoRequest(deposito.Id)));
 
         Assert.Equal("Estoque insuficiente para reservar o pedido.", exception.Message);
         var saldo = Assert.Single(service.ListarSaldos());
@@ -168,13 +173,14 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
-        var empresaId = Guid.NewGuid();
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000105", "Empresa Produtos", "Empresa Produtos LTDA"));
 
-        service.CadastrarProduto(new CreateProdutoRequest(empresaId, "P100", "SKU-100", "Produto Alpha", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
-        service.CadastrarProduto(new CreateProdutoRequest(empresaId, "P101", "SKU-101", "Produto Beta", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
-        service.CadastrarProduto(new CreateProdutoRequest(Guid.NewGuid(), "P102", "SKU-102", "Produto Gamma", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P100", "SKU-100", "Produto Alpha", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P101", "SKU-101", "Produto Beta", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var outraEmpresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000106", "Empresa Outra", "Empresa Outra LTDA"));
+        service.CadastrarProduto(new CreateProdutoRequest(outraEmpresa.Id, "P102", "SKU-102", "Produto Gamma", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
 
-        var resultado = service.ConsultarProdutos(new ConsultarProdutosRequest(empresaId, true, "Produto", 1, 2));
+        var resultado = service.ConsultarProdutos(new ConsultarProdutosRequest(empresa.Id, true, "Produto", 1, 2));
 
         Assert.Equal(2, resultado.Items.Count);
         Assert.Equal(1, resultado.Page);
@@ -187,13 +193,13 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
-        var empresaId = Guid.NewGuid();
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000107", "Empresa Clientes", "Empresa Clientes LTDA"));
 
-        var clienteAtivo = service.CadastrarCliente(new CreateClienteRequest(empresaId, "12345678901", "Cliente Alpha", "alpha@empresa.com"));
-        var clienteBloqueado = service.CadastrarCliente(new CreateClienteRequest(empresaId, "12345678902", "Cliente Beta", "beta@empresa.com"));
+        var clienteAtivo = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "12345678901", "Cliente Alpha", "alpha@empresa.com"));
+        var clienteBloqueado = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "12345678902", "Cliente Beta", "beta@empresa.com"));
         service.BloquearCliente(clienteBloqueado.Id, new BloquearClienteRequest("Inadimplencia"));
 
-        var resultado = service.ConsultarClientes(new ConsultarClientesRequest(empresaId, "Ativo", "Alpha", 1, 10));
+        var resultado = service.ConsultarClientes(new ConsultarClientesRequest(empresa.Id, "Ativo", "Alpha", 1, 10));
 
         var cliente = Assert.Single(resultado.Items);
         Assert.Equal(clienteAtivo.Id, cliente.Id);
@@ -201,20 +207,145 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     }
 
     [Fact]
+    public void Nao_deve_aprovar_pedido_quando_cliente_cadastrado_estiver_inativo()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000108", "Empresa Inativa", "Empresa Inativa LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000004", "Cliente Inativo", "inativo@empresa.com"));
+        service.InativarCliente(cliente.Id);
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P300", "SKU-300", "Produto Cliente", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 1m, 10m));
+
+        var exception = Assert.Throws<DomainException>(() => service.AprovarPedido(pedido.Id, new AprovarPedidoRequest(true)));
+
+        Assert.Equal("Cliente inativo nao pode ter pedido aprovado.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_criar_nota_fiscal_com_cliente_diferente_do_pedido()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000109", "Empresa Pedido", "Empresa Pedido LTDA"));
+        var clientePedido = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000005", "Cliente Pedido", "pedido@empresa.com"));
+        var clienteNota = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000006", "Cliente Nota", "nota2@empresa.com"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P401A", "SKU-401A", "Produto Cliente Pedido", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(clientePedido.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 1m, 10m));
+
+        var exception = Assert.Throws<DomainException>(() => service.CriarNotaFiscal(new CreateNotaFiscalRequest(
+            pedido.Id,
+            clienteNota.Id,
+            [new ItemNotaFiscalRequest(produto.Id, 1m, "12345678", "5102")])));
+
+        Assert.Equal("Cliente informado para a nota fiscal difere do cliente do pedido.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_criar_nota_fiscal_com_itens_diferentes_do_pedido()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000110", "Empresa Fiscal", "Empresa Fiscal LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000007", "Cliente Fiscal", "fiscal@empresa.com"));
+        var produtoPedido = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P400", "SKU-400", "Produto Pedido", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var produtoNota = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P401", "SKU-401", "Produto Nota", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produtoPedido.Id, 1m, 10m));
+
+        var exception = Assert.Throws<DomainException>(() => service.CriarNotaFiscal(new CreateNotaFiscalRequest(
+            pedido.Id,
+            cliente.Id,
+            [new ItemNotaFiscalRequest(produtoNota.Id, 1m, "12345678", "5102")])));
+
+        Assert.Equal("Itens da nota fiscal diferem dos itens do pedido.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_criar_nota_fiscal_para_pedido_cancelado()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000111", "Empresa Cancelada", "Empresa Cancelada LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000008", "Cliente Cancelado", "cancelado@empresa.com"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P402", "SKU-402", "Produto Cancelado", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 1m, 10m));
+        service.AprovarPedido(pedido.Id, new AprovarPedidoRequest(true));
+        service.CancelarPedido(pedido.Id, new CancelarPedidoRequest(null, false));
+
+        var exception = Assert.Throws<DomainException>(() => service.CriarNotaFiscal(new CreateNotaFiscalRequest(
+            pedido.Id,
+            cliente.Id,
+            [new ItemNotaFiscalRequest(produto.Id, 1m, "12345678", "5102")])));
+
+        Assert.Equal("Pedido cancelado nao pode gerar nota fiscal.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_permitir_segunda_nota_fiscal_ativa_para_o_mesmo_pedido()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000112", "Empresa Duplicada", "Empresa Duplicada LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000009", "Cliente Duplicado", "duplicado@empresa.com"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P403", "SKU-403", "Produto Duplicado", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 1m, 10m));
+        service.CriarNotaFiscal(new CreateNotaFiscalRequest(
+            pedido.Id,
+            cliente.Id,
+            [new ItemNotaFiscalRequest(produto.Id, 1m, "12345678", "5102")]));
+
+        var exception = Assert.Throws<DomainException>(() => service.CriarNotaFiscal(new CreateNotaFiscalRequest(
+            pedido.Id,
+            cliente.Id,
+            [new ItemNotaFiscalRequest(produto.Id, 1m, "12345678", "5102")])));
+
+        Assert.Equal("Pedido ja possui nota fiscal ativa vinculada.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_permitir_alterar_pedido_com_nota_fiscal_vinculada()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000113", "Empresa Vinculada", "Empresa Vinculada LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000010", "Cliente Vinculado", "vinculado@empresa.com"));
+        var produto1 = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P404", "SKU-404", "Produto 1", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var produto2 = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P405", "SKU-405", "Produto 2", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto1.Id, 1m, 10m));
+        service.CriarNotaFiscal(new CreateNotaFiscalRequest(
+            pedido.Id,
+            cliente.Id,
+            [new ItemNotaFiscalRequest(produto1.Id, 1m, "12345678", "5102")]));
+
+        var exceptionAdicionar = Assert.Throws<DomainException>(() => service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto2.Id, 1m, 10m)));
+        var exceptionCancelar = Assert.Throws<DomainException>(() => service.CancelarPedido(pedido.Id, new CancelarPedidoRequest(null, false)));
+
+        Assert.Equal("Pedido com nota fiscal vinculada nao pode ser alterado.", exceptionAdicionar.Message);
+        Assert.Equal("Pedido com nota fiscal vinculada nao pode ser alterado.", exceptionCancelar.Message);
+    }
+
+    [Fact]
     public void Deve_aplicar_filtro_e_paginacao_na_consulta_de_usuarios()
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
-        var empresaId = Guid.NewGuid();
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000114", "Empresa Usuarios", "Empresa Usuarios LTDA"));
 
-        var usuario1 = service.CadastrarUsuario(new CreateUsuarioRequest(empresaId, "alpha@empresa.com", "Usuario Alpha"));
-        var usuario2 = service.CadastrarUsuario(new CreateUsuarioRequest(empresaId, "beta@empresa.com", "Usuario Beta"));
-        service.CadastrarUsuario(new CreateUsuarioRequest(Guid.NewGuid(), "gamma@outra.com", "Usuario Gamma"));
+        var usuario1 = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "alpha@empresa.com", "Usuario Alpha"));
+        var usuario2 = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "beta@empresa.com", "Usuario Beta"));
+        var outraEmpresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000115", "Empresa Outra Usuario", "Empresa Outra Usuario LTDA"));
+        service.CadastrarUsuario(new CreateUsuarioRequest(outraEmpresa.Id, "gamma@outra.com", "Usuario Gamma"));
         service.AtivarUsuario(usuario1.Id);
         service.AtivarUsuario(usuario2.Id);
         service.BloquearUsuario(usuario2.Id, new BloquearUsuarioRequest("Teste"));
 
-        var resultado = service.ConsultarUsuarios(new ConsultarUsuariosRequest(empresaId, "Ativo", "alpha", 1, 10));
+        var resultado = service.ConsultarUsuarios(new ConsultarUsuariosRequest(empresa.Id, "Ativo", "alpha", 1, 10));
 
         var usuario = Assert.Single(resultado.Items);
         Assert.Equal("alpha@empresa.com", usuario.Email);
@@ -228,13 +359,13 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
-        var empresaId = Guid.NewGuid();
-        var depositoId = Guid.NewGuid();
-        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresaId, "P200", "SKU-200", "Produto Historico", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000116", "Empresa Historico", "Empresa Historico LTDA"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-005", "Deposito Historico"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P200", "SKU-200", "Produto Historico", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
 
         service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
-            empresaId,
-            depositoId,
+            empresa.Id,
+            deposito.Id,
             "CHAVE-HIST-1",
             [new ItemNotaEntradaExternaRequest("EXT-H1", "Produto Historico", 1m)],
             new Dictionary<string, Guid> { ["EXT-H1"] = produto.Id }));
@@ -242,7 +373,7 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         service.ProcessarWebhook(new ProcessarWebhookRequest("evt-hist-1", "marketplace", "{\"pedido\":\"1\"}"));
         service.ProcessarWebhook(new ProcessarWebhookRequest("evt-hist-1", "marketplace", "{\"pedido\":\"1\"}"));
 
-        var importacoes = service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresaId, depositoId, true, "CHAVE-HIST", 1, 10));
+        var importacoes = service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresa.Id, deposito.Id, true, "CHAVE-HIST", 1, 10));
         var webhooks = service.ConsultarWebhooks(new ConsultarWebhooksRequest("marketplace", "IgnoradoDuplicado", "evt-hist", 1, 10));
 
         var importacao = Assert.Single(importacoes.Items);
@@ -252,5 +383,114 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         var webhook = Assert.Single(webhooks.Items);
         Assert.Equal("evt-hist-1", webhook.EventoId);
         Assert.Equal("IgnoradoDuplicado", webhook.Status);
+    }
+
+    [Fact]
+    public void Nao_deve_permitir_operacao_de_estoque_com_deposito_inativo()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000117", "Empresa Deposito", "Empresa Deposito LTDA"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresa.Id, "DEP-006", "Deposito Inativo"));
+        service.InativarDeposito(deposito.Id);
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P500", "SKU-500", "Produto Deposito", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+
+        var exception = Assert.Throws<DomainException>(() => service.CriarSaldo(new CriarSaldoEstoqueRequest(produto.Id, deposito.Id, 1m, false)));
+
+        Assert.Equal("Deposito inativo nao pode ser utilizado em operacoes.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_cadastrar_cliente_para_empresa_inativa()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000118", "Empresa Inativa Cadastro", "Empresa Inativa Cadastro LTDA"));
+        service.InativarEmpresa(empresa.Id);
+
+        var exception = Assert.Throws<DomainException>(() => service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000011", "Cliente Bloqueado", "bloqueado@empresa.com")));
+
+        Assert.Equal("Empresa inativa ou bloqueada nao pode operar.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_adicionar_produto_de_outra_empresa_ao_pedido()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresaPedido = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000120", "Empresa Pedido Cruzado", "Empresa Pedido Cruzado LTDA"));
+        var empresaProduto = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000121", "Empresa Produto Cruzado", "Empresa Produto Cruzado LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresaPedido.Id, "10000000012", "Cliente Cruzado", "cruzado@empresa.com"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresaProduto.Id, "P600", "SKU-600", "Produto Cruzado", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+
+        var exception = Assert.Throws<DomainException>(() => service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 1m, 10m)));
+
+        Assert.Equal("Produto informado pertence a outra empresa do pedido.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_reservar_pedido_em_deposito_de_outra_empresa()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresaPedido = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000122", "Empresa Pedido Deposito", "Empresa Pedido Deposito LTDA"));
+        var empresaDeposito = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000123", "Empresa Deposito Cruzado", "Empresa Deposito Cruzado LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresaPedido.Id, "10000000013", "Cliente Deposito", "deposito@empresa.com"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresaPedido.Id, "P601", "SKU-601", "Produto Pedido", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresaDeposito.Id, "DEP-008", "Deposito Cruzado"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 1m, 10m));
+        service.AprovarPedido(pedido.Id, new AprovarPedidoRequest(true));
+
+        var exception = Assert.Throws<DomainException>(() => service.ReservarPedido(pedido.Id, new ReservarPedidoRequest(deposito.Id)));
+
+        Assert.Equal("Deposito informado pertence a outra empresa do pedido.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_importar_nota_com_produto_conciliado_de_outra_empresa()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresaImportacao = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000124", "Empresa Importacao", "Empresa Importacao LTDA"));
+        var empresaProduto = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000125", "Empresa Produto Importacao", "Empresa Produto Importacao LTDA"));
+        var deposito = service.CadastrarDeposito(new CreateDepositoRequest(empresaImportacao.Id, "DEP-009", "Deposito Importacao"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresaProduto.Id, "P602", "SKU-602", "Produto Outra Empresa", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+
+        var exception = Assert.Throws<DomainException>(() => service.ImportarNotaEntrada(new ImportarNotaEntradaRequest(
+            empresaImportacao.Id,
+            deposito.Id,
+            "CHAVE-IMPORT-CRUZADA",
+            [new ItemNotaEntradaExternaRequest("EXT-CRUZ", "Produto Outra Empresa", 2m)],
+            new Dictionary<string, Guid> { ["EXT-CRUZ"] = produto.Id })));
+
+        Assert.Equal("Produto conciliado pertence a outra empresa.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_autorizar_nota_fiscal_em_deposito_de_outra_empresa()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresaPedido = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000126", "Empresa Nota Deposito", "Empresa Nota Deposito LTDA"));
+        var empresaDeposito = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000127", "Empresa Deposito Nota", "Empresa Deposito Nota LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresaPedido.Id, "10000000014", "Cliente Nota Deposito", "notadeposito@empresa.com"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresaPedido.Id, "P603", "SKU-603", "Produto Nota Deposito", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var depositoPedido = service.CadastrarDeposito(new CreateDepositoRequest(empresaPedido.Id, "DEP-010", "Deposito Pedido"));
+        var depositoOutro = service.CadastrarDeposito(new CreateDepositoRequest(empresaDeposito.Id, "DEP-011", "Deposito Outro"));
+        service.CriarSaldo(new CriarSaldoEstoqueRequest(produto.Id, depositoPedido.Id, 5m, false));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 1m, 10m));
+        service.AprovarPedido(pedido.Id, new AprovarPedidoRequest(true));
+        service.ReservarPedido(pedido.Id, new ReservarPedidoRequest(depositoPedido.Id));
+        var nota = service.CriarNotaFiscal(new CreateNotaFiscalRequest(
+            pedido.Id,
+            cliente.Id,
+            [new ItemNotaFiscalRequest(produto.Id, 1m, "12345678", "5102")]));
+
+        var exception = Assert.Throws<DomainException>(() => service.AutorizarNotaFiscal(nota.Id, new AutorizarNotaFiscalRequest(depositoOutro.Id, "evt-deposito-cruzado")));
+
+        Assert.Equal("Deposito informado pertence a outra empresa da nota fiscal.", exception.Message);
     }
 }
