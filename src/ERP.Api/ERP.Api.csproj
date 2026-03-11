@@ -7,8 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ERP.BuildingBlocks\ERP.BuildingBlocks.csproj" />
     <ProjectReference Include="..\ERP.Modules.Catalogo\ERP.Modules.Catalogo.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Clientes\ERP.Modules.Clientes.csproj" />
     <ProjectReference Include="..\ERP.Modules.Compras\ERP.Modules.Compras.csproj" />
     <ProjectReference Include="..\ERP.Modules.Estoque\ERP.Modules.Estoque.csproj" />
     <ProjectReference Include="..\ERP.Modules.Fiscal\ERP.Modules.Fiscal.csproj" />

@@ -40,6 +40,16 @@ public sealed class PedidoVenda
 
     public void Aprovar(bool clienteAtivo)
     {
+        if (Status == StatusPedidoVenda.Aprovado)
+        {
+            return;
+        }
+
+        if (Status == StatusPedidoVenda.Reservado || Status == StatusPedidoVenda.Faturado)
+        {
+            return;
+        }
+
         if (!clienteAtivo)
         {
             throw new DomainException("Cliente inativo nao pode ter pedido aprovado.");
@@ -67,5 +77,35 @@ public sealed class PedidoVenda
         }
 
         Status = StatusPedidoVenda.Reservado;
+    }
+
+    public void Faturar()
+    {
+        if (Status == StatusPedidoVenda.Faturado)
+        {
+            return;
+        }
+
+        if (Status != StatusPedidoVenda.Reservado)
+        {
+            throw new DomainException("Somente pedidos reservados podem ser faturados.");
+        }
+
+        Status = StatusPedidoVenda.Faturado;
+    }
+
+    public void Cancelar()
+    {
+        if (Status == StatusPedidoVenda.Cancelado)
+        {
+            return;
+        }
+
+        if (Status == StatusPedidoVenda.Faturado)
+        {
+            throw new DomainException("Pedido faturado nao pode ser cancelado.");
+        }
+
+        Status = StatusPedidoVenda.Cancelado;
     }
 }

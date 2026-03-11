@@ -1,6 +1,237 @@
 @ERP.Api_HostAddress = http://localhost:5234
+@empresaId = 11111111-1111-1111-1111-111111111111
+@clienteId = 22222222-2222-2222-2222-222222222222
+@clienteCadastroId = 77777777-7777-7777-7777-777777777777
+@produtoId = 33333333-3333-3333-3333-333333333333
+@depositoId = 44444444-4444-4444-4444-444444444444
+@pedidoId = 55555555-5555-5555-5555-555555555555
+@notaId = 66666666-6666-6666-6666-666666666666
 
-GET {{ERP.Api_HostAddress}}/weatherforecast/
+# Todas as respostas agora seguem o envelope:
+# { "success": true|false, "data": ..., "error": { "code": "...", "message": "..." } }
+
+GET {{ERP.Api_HostAddress}}/
 Accept: application/json
 
 ###
+
+GET {{ERP.Api_HostAddress}}/modules
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/health/ready
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/system/storage
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/system/events?type=vendas.pedido_reservado&page=1&pageSize=20
+Accept: application/json
+
+###
+
+POST {{ERP.Api_HostAddress}}/catalogo/produtos
+Content-Type: application/json
+
+{
+  "empresaId": "{{empresaId}}",
+  "codigoInterno": "P001",
+  "sku": "SKU-001",
+  "descricao": "Produto de teste",
+  "tipo": "Simples",
+  "precoVenda": 100.0,
+  "custo": 60.0,
+  "ncm": "12345678",
+  "origem": "0"
+}
+
+###
+
+GET {{ERP.Api_HostAddress}}/catalogo/produtos?ativo=true&page=1&pageSize=20&termo=SKU
+Accept: application/json
+
+###
+
+POST {{ERP.Api_HostAddress}}/clientes
+Content-Type: application/json
+
+{
+  "empresaId": "{{empresaId}}",
+  "documento": "12345678901",
+  "nome": "Cliente Teste",
+  "email": "cliente@teste.com"
+}
+
+###
+
+GET {{ERP.Api_HostAddress}}/clientes?empresaId={{empresaId}}&status=Ativo&page=1&pageSize=20&termo=Cliente
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/identity/usuarios?status=Ativo&page=1&pageSize=20&termo=usuario
+Accept: application/json
+
+###
+
+POST {{ERP.Api_HostAddress}}/estoque/saldos
+Content-Type: application/json
+
+{
+  "produtoId": "{{produtoId}}",
+  "depositoId": "{{depositoId}}",
+  "saldoInicial": 20.0,
+  "permiteSaldoNegativo": false
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/vendas/pedidos
+Content-Type: application/json
+
+{
+  "clienteId": "{{clienteId}}"
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}/itens
+Content-Type: application/json
+
+{
+  "produtoId": "{{produtoId}}",
+  "quantidade": 2.0,
+  "precoUnitario": 100.0
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}/aprovar
+Content-Type: application/json
+
+{
+  "clienteAtivo": true
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}/reservar
+Content-Type: application/json
+
+{
+  "depositoId": "{{depositoId}}"
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}/cancelar
+Content-Type: application/json
+
+{
+  "depositoId": "{{depositoId}}",
+  "liberarReservaEstoque": true
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/clientes/{{clienteCadastroId}}/bloquear
+Content-Type: application/json
+
+{
+  "motivo": "Analise de credito"
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/compras/importacoes-nota-entrada
+Content-Type: application/json
+
+{
+  "empresaId": "{{empresaId}}",
+  "depositoId": "{{depositoId}}",
+  "chaveAcesso": "CHAVE-2",
+  "itensExternos": [
+    {
+      "codigoExterno": "EXT-1",
+      "descricao": "Produto externo",
+      "quantidade": 2.0
+    }
+  ],
+  "conciliacoes": {
+    "EXT-1": "{{produtoId}}"
+  }
+}
+
+###
+
+GET {{ERP.Api_HostAddress}}/compras/importacoes-nota-entrada?empresaId={{empresaId}}&depositoId={{depositoId}}&importadaComSucesso=true&page=1&pageSize=20
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/estoque/saldos?produtoId={{produtoId}}&depositoId={{depositoId}}&page=1&pageSize=20
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/estoque/movimentos?produtoId={{produtoId}}&depositoId={{depositoId}}&page=1&pageSize=20
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/vendas/pedidos?status=Reservado&clienteId={{clienteId}}&page=1&pageSize=20
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/fiscal/notas?status=Autorizada&clienteId={{clienteId}}&page=1&pageSize=20
+Accept: application/json
+
+###
+
+POST {{ERP.Api_HostAddress}}/fiscal/notas
+Content-Type: application/json
+
+{
+  "pedidoVendaId": "{{pedidoId}}",
+  "clienteId": "{{clienteId}}",
+  "itens": [
+    {
+      "produtoId": "{{produtoId}}",
+      "quantidade": 2.0,
+      "ncm": "12345678",
+      "cfop": "5102"
+    }
+  ]
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/fiscal/notas/{{notaId}}/autorizar
+Content-Type: application/json
+
+{
+  "depositoId": "{{depositoId}}",
+  "eventoId": "evt-nf-001"
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/integracoes/webhooks
+Content-Type: application/json
+
+{
+  "eventoId": "evt-1",
+  "origem": "marketplace",
+  "payload": "{\"pedido\":\"123\"}"
+}
+
+###
+
+GET {{ERP.Api_HostAddress}}/integracoes/webhooks?origem=marketplace&status=Processado&page=1&pageSize=20
+Accept: application/json

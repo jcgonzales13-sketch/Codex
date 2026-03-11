@@ -51,6 +51,30 @@ public sealed class SaldoEstoqueTests
     }
 
     [Fact]
+    public void Liberacao_de_reserva_deve_reduzir_quantidade_reservada()
+    {
+        var saldo = new SaldoEstoque(Guid.NewGuid(), Guid.NewGuid(), 10m, permiteSaldoNegativo: false);
+        saldo.Reservar(4m, "PED-2");
+
+        var movimento = saldo.LiberarReserva(2m, "PED-2");
+
+        Assert.Equal(TipoMovimentoEstoque.LiberacaoReservaPedido, movimento.Tipo);
+        Assert.Equal(2m, saldo.Reservado);
+        Assert.Equal(8m, saldo.Disponivel);
+    }
+
+    [Fact]
+    public void Nao_deve_liberar_reserva_acima_do_quantitativo_reservado()
+    {
+        var saldo = new SaldoEstoque(Guid.NewGuid(), Guid.NewGuid(), 10m, permiteSaldoNegativo: false);
+        saldo.Reservar(1m, "PED-3");
+
+        var exception = Assert.Throws<DomainException>(() => saldo.LiberarReserva(2m, "PED-3"));
+
+        Assert.Equal("Quantidade para liberacao excede o estoque reservado.", exception.Message);
+    }
+
+    [Fact]
     public void Transferencia_deve_gerar_saida_e_entrada_vinculadas()
     {
         var origem = new SaldoEstoque(Guid.NewGuid(), Guid.NewGuid(), 8m, permiteSaldoNegativo: false);

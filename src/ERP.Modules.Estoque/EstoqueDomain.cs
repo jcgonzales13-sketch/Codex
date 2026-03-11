@@ -9,6 +9,7 @@ public enum TipoMovimentoEstoque
     AjustePositivo,
     AjusteNegativo,
     ReservaPedido,
+    LiberacaoReservaPedido,
     BaixaFaturamento,
     TransferenciaSaida,
     TransferenciaEntrada
@@ -79,6 +80,23 @@ public sealed class SaldoEstoque
         var saldoAnterior = Reservado;
         Reservado += quantidade;
         return new MovimentoEstoque(ProdutoId, DepositoId, TipoMovimentoEstoque.ReservaPedido, quantidade, "Reserva de pedido", documentoOrigem, saldoAnterior, Reservado, DateTimeOffset.UtcNow);
+    }
+
+    public MovimentoEstoque LiberarReserva(decimal quantidade, string documentoOrigem)
+    {
+        if (quantidade <= 0)
+        {
+            throw new DomainException("Quantidade da liberacao de reserva deve ser maior que zero.");
+        }
+
+        if (Reservado < quantidade)
+        {
+            throw new DomainException("Quantidade para liberacao excede o estoque reservado.");
+        }
+
+        var reservadoAnterior = Reservado;
+        Reservado -= quantidade;
+        return new MovimentoEstoque(ProdutoId, DepositoId, TipoMovimentoEstoque.LiberacaoReservaPedido, quantidade, "Liberacao de reserva", documentoOrigem, reservadoAnterior, Reservado, DateTimeOffset.UtcNow);
     }
 
     public MovimentoEstoque ConfirmarBaixaFaturamento(decimal quantidade, string eventoId, string documentoOrigem)

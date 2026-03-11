@@ -40,4 +40,57 @@ public sealed class PedidoVendaTests
 
         Assert.Equal("Estoque insuficiente para reservar o pedido.", exception.Message);
     }
+
+    [Fact]
+    public void Deve_faturar_pedido_reservado()
+    {
+        var produtoId = Guid.NewGuid();
+        var pedido = new PedidoVenda(Guid.NewGuid());
+        pedido.AdicionarItem(produtoId, 1m, 10m);
+        pedido.Aprovar(clienteAtivo: true);
+        pedido.Reservar((_, _) => true);
+
+        pedido.Faturar();
+
+        Assert.Equal(StatusPedidoVenda.Faturado, pedido.Status);
+    }
+
+    [Fact]
+    public void Nao_deve_cancelar_pedido_faturado()
+    {
+        var pedido = new PedidoVenda(Guid.NewGuid());
+        pedido.AdicionarItem(Guid.NewGuid(), 1m, 10m);
+        pedido.Aprovar(clienteAtivo: true);
+        pedido.Reservar((_, _) => true);
+        pedido.Faturar();
+
+        var exception = Assert.Throws<DomainException>(() => pedido.Cancelar());
+
+        Assert.Equal("Pedido faturado nao pode ser cancelado.", exception.Message);
+    }
+
+    [Fact]
+    public void Deve_cancelar_pedido_nao_faturado()
+    {
+        var pedido = new PedidoVenda(Guid.NewGuid());
+        pedido.AdicionarItem(Guid.NewGuid(), 1m, 10m);
+        pedido.Aprovar(clienteAtivo: true);
+
+        pedido.Cancelar();
+
+        Assert.Equal(StatusPedidoVenda.Cancelado, pedido.Status);
+    }
+
+    [Fact]
+    public void Deve_ignorar_cancelamento_repetido_do_mesmo_pedido()
+    {
+        var pedido = new PedidoVenda(Guid.NewGuid());
+        pedido.AdicionarItem(Guid.NewGuid(), 1m, 10m);
+        pedido.Aprovar(clienteAtivo: true);
+        pedido.Cancelar();
+
+        pedido.Cancelar();
+
+        Assert.Equal(StatusPedidoVenda.Cancelado, pedido.Status);
+    }
 }

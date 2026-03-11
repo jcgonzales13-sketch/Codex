@@ -41,6 +41,30 @@ public sealed class NotaFiscalTests
         Assert.NotEmpty(nota.HistoricoTentativas);
     }
 
+    [Fact]
+    public void Deve_ignorar_autorizacao_repetida_sem_duplicar_historico()
+    {
+        var nota = CriarNota();
+
+        nota.Autorizar();
+        nota.Autorizar();
+
+        Assert.Equal(StatusNotaFiscal.Autorizada, nota.Status);
+        Assert.Single(nota.HistoricoTentativas);
+    }
+
+    [Fact]
+    public void Deve_ignorar_cancelamento_repetido_com_mesma_justificativa()
+    {
+        var nota = CriarNota();
+
+        nota.Cancelar("Erro de emissao", estornarImpactosOperacionais: true);
+        nota.Cancelar("Erro de emissao", estornarImpactosOperacionais: true);
+
+        Assert.Equal(StatusNotaFiscal.Cancelada, nota.Status);
+        Assert.Single(nota.HistoricoTentativas);
+    }
+
     private static NotaFiscal CriarNota()
     {
         return new NotaFiscal(Guid.NewGuid(), Guid.NewGuid(), [new ItemNotaFiscal(Guid.NewGuid(), 1m, "12345678", "5102")]);

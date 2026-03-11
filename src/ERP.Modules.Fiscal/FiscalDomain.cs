@@ -42,13 +42,36 @@ public sealed class NotaFiscal
 
     public void Autorizar()
     {
+        if (Status == StatusNotaFiscal.Autorizada)
+        {
+            return;
+        }
+
+        if (Status == StatusNotaFiscal.Cancelada)
+        {
+            throw new DomainException("Nota fiscal cancelada nao pode ser autorizada.");
+        }
+
         Status = StatusNotaFiscal.Autorizada;
         EstoqueBaixado = true;
-        _historicoTentativas.Add("Autorizada");
+        if (_historicoTentativas.LastOrDefault() != "Autorizada")
+        {
+            _historicoTentativas.Add("Autorizada");
+        }
     }
 
     public void RegistrarRejeicao(string codigo, string mensagem)
     {
+        if (Status == StatusNotaFiscal.Cancelada)
+        {
+            throw new DomainException("Nota fiscal cancelada nao pode receber rejeicao.");
+        }
+
+        if (Status == StatusNotaFiscal.Rejeitada && CodigoRejeicao == codigo && MensagemRejeicao == mensagem)
+        {
+            return;
+        }
+
         Status = StatusNotaFiscal.Rejeitada;
         CodigoRejeicao = codigo;
         MensagemRejeicao = mensagem;
@@ -61,6 +84,11 @@ public sealed class NotaFiscal
         if (string.IsNullOrWhiteSpace(justificativa))
         {
             throw new DomainException("Justificativa de cancelamento e obrigatoria.");
+        }
+
+        if (Status == StatusNotaFiscal.Cancelada && string.Equals(JustificativaCancelamento, justificativa.Trim(), StringComparison.Ordinal))
+        {
+            return;
         }
 
         Status = StatusNotaFiscal.Cancelada;
