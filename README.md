@@ -17,7 +17,7 @@ Modulos atuais:
 - Estoque: ajustes, reservas, baixas por faturamento e transferencias.
 - Vendas: aprovacao e reserva de pedidos.
 - Fiscal: autorizacao, rejeicao e cancelamento de notas fiscais com repeticao segura de operacoes criticas.
-- Identity: cadastro de usuarios, ativacao, bloqueio e permissoes.
+- Identity: cadastro de usuarios, senha, login, sessao, bloqueio e permissoes.
 - Integracoes: processamento idempotente de webhooks.
 
 ## Estrutura
@@ -94,6 +94,7 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /clientes`
 - `GET /depositos`
 - `GET /identity/usuarios`
+- `POST /identity/auth/login`
 - `GET /compras/importacoes-nota-entrada`
 - `GET /vendas/pedidos`
 - `GET /fiscal/notas`
@@ -114,6 +115,32 @@ dotnet test .\tests\ERP.Modules.Estoque.UnitTests\ERP.Modules.Estoque.UnitTests.
 ```
 
 Observacao: no ambiente onde este repositorio foi preparado, o SDK .NET 9 pode falhar por interferencia do workload resolver. Se isso acontecer, execute os comandos com `MSBuildEnableWorkloadResolver=false`, por exemplo: `$env:MSBuildEnableWorkloadResolver='false'; dotnet test ERP.sln`.
+
+## Autenticacao Basica
+
+A API agora suporta sessao simples por token via modulo `Identity`.
+
+Fluxo minimo:
+
+1. Criar o primeiro usuario da empresa.
+2. Definir senha com `POST /identity/usuarios/{usuarioId}/senha`.
+3. Fazer login em `POST /identity/auth/login`.
+4. Enviar o token retornado no header `X-Session-Token` nas operacoes mutaveis protegidas.
+
+Permissoes operacionais atuais:
+
+- `ADMIN`
+- `EMPRESAS_MANAGE`
+- `CATALOGO_MANAGE`
+- `CLIENTES_MANAGE`
+- `FORNECEDORES_MANAGE`
+- `DEPOSITOS_MANAGE`
+- `IDENTITY_MANAGE`
+- `ESTOQUE_MANAGE`
+- `VENDAS_MANAGE`
+- `COMPRAS_MANAGE`
+- `FISCAL_MANAGE`
+- `INTEGRACOES_MANAGE`
 
 ## Endpoints da API
 
@@ -173,6 +200,10 @@ Retorna depositos com filtros opcionais por empresa, status, termo e paginacao.
 
 Retorna usuarios com filtros opcionais por empresa, status, termo e paginacao.
 
+`POST /identity/auth/login`
+
+Realiza autenticacao por empresa, email e senha, retornando token de sessao.
+
 `GET /compras/importacoes-nota-entrada`
 
 Retorna o historico das importacoes de nota de entrada, com filtros por empresa, fornecedor, deposito, sucesso da importacao, chave e paginacao.
@@ -197,6 +228,7 @@ Exemplos de consulta:
 - `GET /clientes?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=Cliente`
 - `GET /depositos?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=DEP`
 - `GET /identity/usuarios?status=Ativo&page=1&pageSize=20&termo=usuario`
+- `POST /identity/auth/login`
 - `GET /compras/importacoes-nota-entrada?empresaId={empresaId}&fornecedorId={fornecedorId}&depositoId={depositoId}&importadaComSucesso=true&page=1&pageSize=20`
 - `GET /estoque/saldos?produtoId={produtoId}&depositoId={depositoId}&page=1&pageSize=20`
 - `GET /estoque/movimentos?produtoId={produtoId}&depositoId={depositoId}&page=1&pageSize=20`
@@ -236,6 +268,8 @@ Exemplo com SQL Server local:
 ## Deploy no Render
 
 O repositorio agora inclui [`Dockerfile`](/c:/CodexProject/Dockerfile) e [`.dockerignore`](/c:/CodexProject/.dockerignore) para publicar a API no plano free do Render via container.
+
+O arquivo [`global.json`](/c:/CodexProject/global.json) foi configurado com `rollForward: latestFeature` para aceitar SDKs `9.0.x` mais novos no ambiente de build do Render, evitando falha quando o host tiver uma feature band diferente da maquina local.
 
 Configuracao recomendada no Render:
 

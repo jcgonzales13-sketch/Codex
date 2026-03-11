@@ -28,6 +28,7 @@ public interface IErpStore
     HashSet<string> EventosWebhook { get; }
     List<ImportacaoNotaEntradaRegistro> ImportacoesNotaEntrada { get; }
     List<WebhookProcessadoRegistro> WebhooksProcessados { get; }
+    List<SessaoAutenticacaoRegistro> SessoesAutenticacao { get; }
     List<IntegrationEvent> IntegrationEvents { get; }
     void Persist();
 }

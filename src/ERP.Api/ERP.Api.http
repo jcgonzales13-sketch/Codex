@@ -5,14 +5,17 @@
 @fornecedorCadastroId = bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
 @clienteId = 22222222-2222-2222-2222-222222222222
 @clienteCadastroId = 77777777-7777-7777-7777-777777777777
+@usuarioCadastroId = cccccccc-cccc-cccc-cccc-cccccccccccc
 @produtoId = 33333333-3333-3333-3333-333333333333
 @depositoId = 44444444-4444-4444-4444-444444444444
 @depositoCadastroId = 88888888-8888-8888-8888-888888888888
 @pedidoId = 55555555-5555-5555-5555-555555555555
 @notaId = 66666666-6666-6666-6666-666666666666
+@sessionToken = informe-token-aqui
 
 # Todas as respostas agora seguem o envelope:
 # { "success": true|false, "data": ..., "error": { "code": "...", "message": "..." } }
+# Operacoes mutaveis protegidas exigem o header `X-Session-Token`.
 
 GET {{ERP.Api_HostAddress}}/
 Accept: application/json
@@ -62,6 +65,7 @@ Accept: application/json
 
 POST {{ERP.Api_HostAddress}}/catalogo/produtos
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "empresaId": "{{empresaId}}",
@@ -84,6 +88,7 @@ Accept: application/json
 
 POST {{ERP.Api_HostAddress}}/clientes
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "empresaId": "{{empresaId}}",
@@ -101,6 +106,7 @@ Accept: application/json
 
 POST {{ERP.Api_HostAddress}}/fornecedores
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "empresaId": "{{empresaId}}",
@@ -118,6 +124,7 @@ Accept: application/json
 
 POST {{ERP.Api_HostAddress}}/depositos
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "empresaId": "{{empresaId}}",
@@ -137,8 +144,52 @@ Accept: application/json
 
 ###
 
+POST {{ERP.Api_HostAddress}}/identity/usuarios
+Content-Type: application/json
+
+{
+  "empresaId": "{{empresaId}}",
+  "email": "alpha@empresa.com",
+  "nome": "Usuario Alpha"
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/identity/usuarios/{{usuarioCadastroId}}/senha
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "senha": "Senha@123",
+  "ativarUsuario": true
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/identity/auth/login
+Content-Type: application/json
+
+{
+  "empresaId": "{{empresaId}}",
+  "email": "alpha@empresa.com",
+  "senha": "Senha@123"
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/identity/usuarios/{{usuarioCadastroId}}/permissoes
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "permissao": "ADMIN"
+}
+
+###
+
 POST {{ERP.Api_HostAddress}}/estoque/saldos
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "produtoId": "{{produtoId}}",
@@ -151,6 +202,7 @@ Content-Type: application/json
 
 POST {{ERP.Api_HostAddress}}/vendas/pedidos
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "clienteId": "{{clienteId}}"
@@ -160,6 +212,7 @@ Content-Type: application/json
 
 POST {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}/itens
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "produtoId": "{{produtoId}}",
@@ -171,6 +224,7 @@ Content-Type: application/json
 
 POST {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}/aprovar
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "clienteAtivo": true
@@ -180,6 +234,7 @@ Content-Type: application/json
 
 POST {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}/reservar
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "depositoId": "{{depositoId}}"
@@ -189,6 +244,7 @@ Content-Type: application/json
 
 POST {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}/cancelar
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "depositoId": "{{depositoId}}",
@@ -199,6 +255,7 @@ Content-Type: application/json
 
 POST {{ERP.Api_HostAddress}}/clientes/{{clienteCadastroId}}/bloquear
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "motivo": "Analise de credito"
@@ -208,16 +265,19 @@ Content-Type: application/json
 
 POST {{ERP.Api_HostAddress}}/depositos/{{depositoCadastroId}}/inativar
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 ###
 
 POST {{ERP.Api_HostAddress}}/empresas/{{empresaCadastroId}}/inativar
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 ###
 
 POST {{ERP.Api_HostAddress}}/compras/importacoes-nota-entrada
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "empresaId": "{{empresaId}}",
@@ -265,6 +325,7 @@ Accept: application/json
 
 POST {{ERP.Api_HostAddress}}/fiscal/notas
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "pedidoVendaId": "{{pedidoId}}",
@@ -283,6 +344,7 @@ Content-Type: application/json
 
 POST {{ERP.Api_HostAddress}}/fiscal/notas/{{notaId}}/autorizar
 Content-Type: application/json
+X-Session-Token: {{sessionToken}}
 
 {
   "depositoId": "{{depositoId}}",

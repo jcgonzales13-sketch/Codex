@@ -44,6 +44,7 @@ public sealed class SqlServerErpStore : IErpStore
     public HashSet<string> EventosWebhook { get; } = [];
     public List<ImportacaoNotaEntradaRegistro> ImportacoesNotaEntrada { get; } = [];
     public List<WebhookProcessadoRegistro> WebhooksProcessados { get; } = [];
+    public List<SessaoAutenticacaoRegistro> SessoesAutenticacao { get; } = [];
     public List<IntegrationEvent> IntegrationEvents { get; } = [];
 
     public void Persist()

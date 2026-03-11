@@ -18,6 +18,7 @@ using ERP.Modules.Vendas;
 namespace ERP.Api.Application;
 
 public sealed class NotFoundException(string message) : Exception(message);
+public sealed class ForbiddenException(string message) : Exception(message);
 
 public sealed class ErpApplicationService(IErpStore store)
 {
@@ -518,12 +519,33 @@ public sealed class ErpApplicationService(IErpStore store)
         }
     }
 
+    public bool PermiteBootstrapIdentity(Guid empresaId)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstEmptyGuid(empresaId, "EmpresaId");
+            return !store.Usuarios.Values.Any(item => item.EmpresaId == empresaId);
+        }
+    }
+
     public UsuarioResponse AtivarUsuario(Guid usuarioId)
     {
         lock (store.SyncRoot)
         {
             var usuario = GetUsuario(usuarioId);
             usuario.Ativar();
+            store.Persist();
+            return MapUsuario(usuario);
+        }
+    }
+
+    public UsuarioResponse DefinirSenhaUsuario(Guid usuarioId, DefinirSenhaUsuarioRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Senha, "Senha");
+            var usuario = GetUsuario(usuarioId);
+            usuario.DefinirSenha(request.Senha, request.AtivarUsuario);
             store.Persist();
             return MapUsuario(usuario);
         }
@@ -538,6 +560,93 @@ public sealed class ErpApplicationService(IErpStore store)
             usuario.Bloquear(request.Motivo);
             store.Persist();
             return MapUsuario(usuario);
+        }
+    }
+
+    public SessaoAutenticacaoResponse Login(LoginRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Email, "Email");
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Senha, "Senha");
+
+            var usuario = store.Usuarios.Values.SingleOrDefault(item =>
+                item.EmpresaId == request.EmpresaId &&
+                string.Equals(item.Email, request.Email.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            if (usuario is null || usuario.Status != StatusUsuario.Ativo || !usuario.ValidarSenha(request.Senha))
+            {
+                throw new DomainException("Credenciais invalidas.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            store.SessoesAutenticacao.RemoveAll(item => item.UsuarioId == usuario.Id || item.ExpiraEm <= now);
+
+            var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
+                .Replace('+', '-')
+                .Replace('/', '_')
+                .TrimEnd('=');
+            var sessao = new SessaoAutenticacaoRegistro(token, usuario.Id, usuario.EmpresaId, usuario.Email, now, now.AddHours(12));
+            store.SessoesAutenticacao.Add(sessao);
+            AddIntegrationEvent("identity.login_realizado", "Identity", usuario.Id.ToString(), $"Login realizado para {usuario.Email}.");
+            store.Persist();
+            return new SessaoAutenticacaoResponse(sessao.Token, sessao.ExpiraEm, MapUsuario(usuario));
+        }
+    }
+
+    public SessaoAutenticacaoResponse ConsultarSessao(ConsultarSessaoRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Token, "Token");
+            var sessao = GetSessaoAtiva(request.Token);
+            var usuario = GetUsuario(sessao.UsuarioId);
+            return new SessaoAutenticacaoResponse(sessao.Token, sessao.ExpiraEm, MapUsuario(usuario));
+        }
+    }
+
+    public void Logout(LogoutRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Token, "Token");
+            var removidos = store.SessoesAutenticacao.RemoveAll(item => string.Equals(item.Token, request.Token.Trim(), StringComparison.Ordinal));
+            if (removidos == 0)
+            {
+                throw new NotFoundException("Sessao de autenticacao nao encontrada.");
+            }
+
+            store.Persist();
+        }
+    }
+
+    public SessaoAutenticacaoResponse ValidarAcesso(string token, string permissao, Guid? empresaId)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(token, "Token");
+            ApplicationGuard.AgainstNullOrWhiteSpace(permissao, "Permissao");
+            var sessao = GetSessaoAtiva(token);
+            var usuario = GetUsuario(sessao.UsuarioId);
+            if (usuario.Status != StatusUsuario.Ativo)
+            {
+                throw new UnauthorizedAccessException("Usuario autenticado nao esta ativo.");
+            }
+
+            if (empresaId is not null && usuario.EmpresaId != empresaId.Value)
+            {
+                throw new ForbiddenException("Sessao autenticada nao pertence a empresa informada.");
+            }
+
+            var permissaoNormalizada = permissao.Trim().ToUpperInvariant();
+            var possuiAcesso = usuario.Permissoes.Contains("ADMIN") || usuario.Permissoes.Contains(permissaoNormalizada);
+            if (!possuiAcesso)
+            {
+                throw new ForbiddenException("Usuario autenticado nao possui permissao para esta operacao.");
+            }
+
+            return new SessaoAutenticacaoResponse(sessao.Token, sessao.ExpiraEm, MapUsuario(usuario));
         }
     }
 
@@ -1250,6 +1359,19 @@ public sealed class ErpApplicationService(IErpStore store)
         return usuario;
     }
 
+    private SessaoAutenticacaoRegistro GetSessaoAtiva(string token)
+    {
+        var now = DateTimeOffset.UtcNow;
+        store.SessoesAutenticacao.RemoveAll(item => item.ExpiraEm <= now);
+        var sessao = store.SessoesAutenticacao.SingleOrDefault(item => string.Equals(item.Token, token.Trim(), StringComparison.Ordinal));
+        if (sessao is null)
+        {
+            throw new NotFoundException("Sessao de autenticacao nao encontrada.");
+        }
+
+        return sessao;
+    }
+
     private Cliente GetCliente(Guid clienteId)
     {
         if (!store.Clientes.TryGetValue(clienteId, out var cliente))
@@ -1339,7 +1461,7 @@ public sealed class ErpApplicationService(IErpStore store)
 
     private static UsuarioResponse MapUsuario(Usuario usuario)
     {
-        return new UsuarioResponse(usuario.Id, usuario.EmpresaId, usuario.Email, usuario.Nome, usuario.Status.ToString(), usuario.UltimoBloqueioEm, usuario.Permissoes.ToArray());
+        return new UsuarioResponse(usuario.Id, usuario.EmpresaId, usuario.Email, usuario.Nome, usuario.Status.ToString(), usuario.UltimoBloqueioEm, usuario.PossuiSenhaConfigurada, usuario.Permissoes.ToArray());
     }
 
     private static ClienteResponse MapCliente(Cliente cliente)

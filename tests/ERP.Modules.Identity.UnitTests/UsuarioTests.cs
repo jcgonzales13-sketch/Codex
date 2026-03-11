@@ -39,6 +39,29 @@ public sealed class UsuarioTests
         Assert.Equal("Usuario bloqueado nao pode ser ativado sem desbloqueio.", exception.Message);
     }
 
+    [Fact]
+    public void Deve_configurar_senha_e_validar_credencial()
+    {
+        var usuario = new Usuario(Guid.NewGuid(), "usuario@empresa.com", "Maria");
+
+        usuario.DefinirSenha("Senha@123", ativarUsuario: true);
+
+        Assert.True(usuario.PossuiSenhaConfigurada);
+        Assert.True(usuario.ValidarSenha("Senha@123"));
+        Assert.False(usuario.ValidarSenha("SenhaErrada"));
+        Assert.Equal(StatusUsuario.Ativo, usuario.Status);
+    }
+
+    [Fact]
+    public void Deve_rejeitar_senha_curta()
+    {
+        var usuario = new Usuario(Guid.NewGuid(), "usuario@empresa.com", "Maria");
+
+        var exception = Assert.Throws<DomainException>(() => usuario.DefinirSenha("123", ativarUsuario: false));
+
+        Assert.Equal("Senha deve possuir ao menos 8 caracteres.", exception.Message);
+    }
+
     private sealed class FakeUsuarioRepository(bool emailJaExiste) : IUsuarioRepository
     {
         public bool EmailJaExiste(Guid empresaId, string email) => emailJaExiste;

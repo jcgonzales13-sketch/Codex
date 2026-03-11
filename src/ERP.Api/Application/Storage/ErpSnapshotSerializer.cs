@@ -34,6 +34,7 @@ internal static class ErpSnapshotSerializer
             store.EventosWebhook.ToArray(),
             store.ImportacoesNotaEntrada.Select(ToSnapshot).ToArray(),
             store.WebhooksProcessados.Select(ToSnapshot).ToArray(),
+            store.SessoesAutenticacao.Select(ToSnapshot).ToArray(),
             store.IntegrationEvents.Select(ToSnapshot).ToArray());
 
         return JsonSerializer.Serialize(snapshot, JsonOptions);
@@ -61,6 +62,7 @@ internal static class ErpSnapshotSerializer
         store.EventosWebhook.Clear();
         store.ImportacoesNotaEntrada.Clear();
         store.WebhooksProcessados.Clear();
+        store.SessoesAutenticacao.Clear();
         store.IntegrationEvents.Clear();
 
         foreach (var empresaSnapshot in snapshot.Empresas ?? Array.Empty<EmpresaSnapshot>())
@@ -165,6 +167,17 @@ internal static class ErpSnapshotSerializer
                 webhook.ProcessadoEm));
         }
 
+        foreach (var sessao in snapshot.SessoesAutenticacao ?? Array.Empty<SessaoAutenticacaoSnapshot>())
+        {
+            store.SessoesAutenticacao.Add(new SessaoAutenticacaoRegistro(
+                sessao.Token,
+                sessao.UsuarioId,
+                sessao.EmpresaId,
+                sessao.Email,
+                sessao.CriadaEm,
+                sessao.ExpiraEm));
+        }
+
         foreach (var integrationEvent in snapshot.IntegrationEvents ?? Array.Empty<IntegrationEventSnapshot>())
         {
             store.IntegrationEvents.Add(new IntegrationEvent(
@@ -207,7 +220,7 @@ internal static class ErpSnapshotSerializer
 
     private static UsuarioSnapshot ToSnapshot(Usuario usuario)
     {
-        return new UsuarioSnapshot(usuario.Id, usuario.EmpresaId, usuario.Email, usuario.Nome, usuario.Status.ToString(), usuario.UltimoBloqueioEm, usuario.Permissoes.ToArray());
+        return new UsuarioSnapshot(usuario.Id, usuario.EmpresaId, usuario.Email, usuario.Nome, usuario.Status.ToString(), usuario.UltimoBloqueioEm, usuario.PasswordHash, usuario.Permissoes.ToArray());
     }
 
     private static ClienteSnapshot ToSnapshot(Cliente cliente)
@@ -294,6 +307,17 @@ internal static class ErpSnapshotSerializer
             webhook.ProcessadoEm);
     }
 
+    private static SessaoAutenticacaoSnapshot ToSnapshot(SessaoAutenticacaoRegistro sessao)
+    {
+        return new SessaoAutenticacaoSnapshot(
+            sessao.Token,
+            sessao.UsuarioId,
+            sessao.EmpresaId,
+            sessao.Email,
+            sessao.CriadaEm,
+            sessao.ExpiraEm);
+    }
+
     private static Empresa RestoreEmpresa(EmpresaSnapshot snapshot)
     {
         var empresa = new Empresa(snapshot.Documento, snapshot.NomeFantasia, snapshot.RazaoSocial);
@@ -376,6 +400,11 @@ internal static class ErpSnapshotSerializer
             }
 
             usuario.ConcederPermissao(permissao);
+        }
+
+        if (!string.IsNullOrWhiteSpace(snapshot.PasswordHash))
+        {
+            SetBackingField(usuario, "<PasswordHash>k__BackingField", snapshot.PasswordHash);
         }
 
         if (string.Equals(snapshot.Status, nameof(StatusUsuario.Bloqueado), StringComparison.OrdinalIgnoreCase))
@@ -528,6 +557,7 @@ internal static class ErpSnapshotSerializer
         IReadOnlyCollection<string> EventosWebhook,
         IReadOnlyCollection<ImportacaoNotaEntradaSnapshot> ImportacoesNotaEntrada,
         IReadOnlyCollection<WebhookProcessadoSnapshot> WebhooksProcessados,
+        IReadOnlyCollection<SessaoAutenticacaoSnapshot>? SessoesAutenticacao,
         IReadOnlyCollection<IntegrationEventSnapshot> IntegrationEvents);
 
     private sealed record EmpresaSnapshot(Guid Id, string Documento, string NomeFantasia, string RazaoSocial, string Status);
@@ -537,7 +567,7 @@ internal static class ErpSnapshotSerializer
     private sealed record AuditChangeSnapshot(string Field, string PreviousValue, string CurrentValue);
     private sealed record ClienteSnapshot(Guid Id, Guid EmpresaId, string Documento, string Nome, string? Email, string Status, DateTimeOffset? UltimoBloqueioEm);
     private sealed record DepositoSnapshot(Guid Id, Guid EmpresaId, string Codigo, string Nome, string Status);
-    private sealed record UsuarioSnapshot(Guid Id, Guid EmpresaId, string Email, string Nome, string Status, DateTimeOffset? UltimoBloqueioEm, IReadOnlyCollection<string> Permissoes);
+    private sealed record UsuarioSnapshot(Guid Id, Guid EmpresaId, string Email, string Nome, string Status, DateTimeOffset? UltimoBloqueioEm, string? PasswordHash, IReadOnlyCollection<string> Permissoes);
     private sealed record PedidoSnapshot(Guid Id, Guid ClienteId, string Status, IReadOnlyCollection<ItemPedidoSnapshot> Itens);
     private sealed record ItemPedidoSnapshot(Guid ProdutoId, decimal Quantidade, decimal PrecoUnitario);
     private sealed record NotaFiscalSnapshot(Guid Id, Guid PedidoVendaId, Guid ClienteId, string Status, string? CodigoRejeicao, string? MensagemRejeicao, bool EstoqueBaixado, string? JustificativaCancelamento, IReadOnlyCollection<ItemNotaFiscalSnapshot> Itens, IReadOnlyCollection<string> HistoricoTentativas);
@@ -547,5 +577,6 @@ internal static class ErpSnapshotSerializer
     private sealed record ChaveImportadaSnapshot(Guid EmpresaId, string ChaveAcesso);
     private sealed record ImportacaoNotaEntradaSnapshot(Guid EmpresaId, Guid? FornecedorId, Guid DepositoId, string ChaveAcesso, bool ImportadaComSucesso, int ItensExternos, int ItensPendentesConciliacao, int MovimentosGerados, DateTimeOffset ProcessadaEm);
     private sealed record WebhookProcessadoSnapshot(string EventoId, string Origem, string Status, string Mensagem, DateTimeOffset ProcessadoEm);
+    private sealed record SessaoAutenticacaoSnapshot(string Token, Guid UsuarioId, Guid EmpresaId, string Email, DateTimeOffset CriadaEm, DateTimeOffset ExpiraEm);
     private sealed record IntegrationEventSnapshot(Guid Id, string Type, string SourceModule, string AggregateId, string Description, DateTimeOffset OccurredAt);
 }

@@ -17,3 +17,11 @@ public sealed record WebhookProcessadoRegistro(
     string Status,
     string Mensagem,
     DateTimeOffset ProcessadoEm);
+
+public sealed record SessaoAutenticacaoRegistro(
+    string Token,
+    Guid UsuarioId,
+    Guid EmpresaId,
+    string Email,
+    DateTimeOffset CriadaEm,
+    DateTimeOffset ExpiraEm);

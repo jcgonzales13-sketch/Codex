@@ -361,6 +361,88 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     }
 
     [Fact]
+    public void Deve_permitir_login_consulta_de_sessao_e_logout()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000131", "Empresa Auth", "Empresa Auth LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "auth@empresa.com", "Usuario Auth"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+
+        var sessao = service.Login(new LoginRequest(empresa.Id, "auth@empresa.com", "Senha@123"));
+        var sessaoConsultada = service.ConsultarSessao(new ConsultarSessaoRequest(sessao.Token));
+
+        Assert.Equal(usuario.Id, sessao.Usuario.Id);
+        Assert.Equal(sessao.Token, sessaoConsultada.Token);
+        Assert.True(sessao.Usuario.PossuiSenhaConfigurada);
+
+        service.Logout(new LogoutRequest(sessao.Token));
+
+        var exception = Assert.Throws<NotFoundException>(() => service.ConsultarSessao(new ConsultarSessaoRequest(sessao.Token)));
+        Assert.Equal("Sessao de autenticacao nao encontrada.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_permitir_login_com_credenciais_invalidas()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000132", "Empresa Auth Invalida", "Empresa Auth Invalida LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "invalido@empresa.com", "Usuario Invalido"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+
+        var exception = Assert.Throws<DomainException>(() => service.Login(new LoginRequest(empresa.Id, "invalido@empresa.com", "Errada@123")));
+
+        Assert.Equal("Credenciais invalidas.", exception.Message);
+    }
+
+    [Fact]
+    public void Deve_permitir_bootstrap_identity_apenas_quando_empresa_ainda_nao_tem_usuarios()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000133", "Empresa Bootstrap", "Empresa Bootstrap LTDA"));
+
+        Assert.True(service.PermiteBootstrapIdentity(empresa.Id));
+
+        service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "bootstrap@empresa.com", "Usuario Bootstrap"));
+
+        Assert.False(service.PermiteBootstrapIdentity(empresa.Id));
+    }
+
+    [Fact]
+    public void Nao_deve_validar_acesso_sem_permissao_necessaria()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000134", "Empresa Permissao", "Empresa Permissao LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "permissao@empresa.com", "Usuario Permissao"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+        var sessao = service.Login(new LoginRequest(empresa.Id, "permissao@empresa.com", "Senha@123"));
+
+        var exception = Assert.Throws<ForbiddenException>(() => service.ValidarAcesso(sessao.Token, "ESTOQUE_MANAGE", empresa.Id));
+
+        Assert.Equal("Usuario autenticado nao possui permissao para esta operacao.", exception.Message);
+    }
+
+    [Fact]
+    public void Nao_deve_validar_acesso_para_outra_empresa()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000135", "Empresa Sessao", "Empresa Sessao LTDA"));
+        var outraEmpresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000136", "Empresa Outra Sessao", "Empresa Outra Sessao LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "sessao@empresa.com", "Usuario Sessao"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+        service.ConcederPermissao(usuario.Id, new ConcederPermissaoRequest("ESTOQUE_MANAGE"));
+        var sessao = service.Login(new LoginRequest(empresa.Id, "sessao@empresa.com", "Senha@123"));
+
+        var exception = Assert.Throws<ForbiddenException>(() => service.ValidarAcesso(sessao.Token, "ESTOQUE_MANAGE", outraEmpresa.Id));
+
+        Assert.Equal("Sessao autenticada nao pertence a empresa informada.", exception.Message);
+    }
+
+    [Fact]
     public void Deve_consultar_historico_de_importacoes_e_webhooks()
     {
         var store = new InMemoryErpStore();
