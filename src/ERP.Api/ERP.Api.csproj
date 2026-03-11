@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ERP.BuildingBlocks\ERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Catalogo\ERP.Modules.Catalogo.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Compras\ERP.Modules.Compras.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Estoque\ERP.Modules.Estoque.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Fiscal\ERP.Modules.Fiscal.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Identity\ERP.Modules.Identity.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Integracoes\ERP.Modules.Integracoes.csproj" />
+    <ProjectReference Include="..\ERP.Modules.Vendas\ERP.Modules.Vendas.csproj" />
+  </ItemGroup>
+
+</Project>
