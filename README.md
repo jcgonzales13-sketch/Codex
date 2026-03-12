@@ -141,6 +141,36 @@ Opcionalmente:
 6. Enviar `Authorization: Bearer {token}` nas operacoes mutaveis protegidas.
 7. Quando o access token expirar, renovar em `POST /identity/oauth/refresh`.
 
+Observacao: o primeiro usuario cadastrado para cada empresa recebe automaticamente o perfil padrao `Administrador`, e a resposta de cadastro retorna `bootstrapAdministrador = true`.
+
+Exemplo resumido de resposta no bootstrap do primeiro usuario:
+
+```json
+{
+  "success": true,
+  "data": {
+    "email": "alpha@empresa.com",
+    "status": "Ativo",
+    "bootstrapAdministrador": true
+  },
+  "error": null
+}
+```
+
+Exemplo resumido de resposta em `POST /identity/oauth/token`:
+
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "...",
+    "refreshToken": "...",
+    "tokenType": "Bearer"
+  },
+  "error": null
+}
+```
+
 Permissoes operacionais atuais:
 
 - `ADMIN`

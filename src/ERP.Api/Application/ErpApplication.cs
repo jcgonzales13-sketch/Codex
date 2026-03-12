@@ -472,7 +472,7 @@ public sealed class ErpApplicationService(IErpStore store)
     {
         lock (store.SyncRoot)
         {
-            return store.Usuarios.Values.Select(MapUsuario).ToArray();
+            return store.Usuarios.Values.Select(usuario => MapUsuario(usuario)).ToArray();
         }
     }
 
@@ -500,7 +500,7 @@ public sealed class ErpApplicationService(IErpStore store)
                     item.Nome.Contains(termo, StringComparison.OrdinalIgnoreCase));
             }
 
-            return ToPagedResponse(query.Select(MapUsuario), request.Page, request.PageSize);
+            return ToPagedResponse(query.Select(usuario => MapUsuario(usuario)), request.Page, request.PageSize);
         }
     }
 
@@ -576,12 +576,18 @@ public sealed class ErpApplicationService(IErpStore store)
             _ = GetEmpresaOperacional(request.EmpresaId);
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Email, "Email");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
+            var isBootstrap = PermiteBootstrapIdentity(request.EmpresaId);
             var repository = new UsuarioRepository(store);
             var service = new CadastroUsuarioService(repository);
             var usuario = service.Cadastrar(request.EmpresaId, request.Email, request.Nome);
+            if (isBootstrap)
+            {
+                VincularBootstrapAdministrativo(usuario);
+            }
+
             AddIntegrationEvent("identity.usuario_cadastrado", "Identity", usuario.Id.ToString(), $"Usuario {usuario.Email} cadastrado.");
             store.Persist();
-            return MapUsuario(usuario);
+            return MapUsuario(usuario, isBootstrap);
         }
     }
 
@@ -1658,9 +1664,9 @@ public sealed class ErpApplicationService(IErpStore store)
             produto.AuditoriasFiscais.Select(auditoria => new AuditChangeResponse(auditoria.Field, auditoria.PreviousValue, auditoria.CurrentValue)).ToArray());
     }
 
-    private static UsuarioResponse MapUsuario(Usuario usuario)
+    private static UsuarioResponse MapUsuario(Usuario usuario, bool bootstrapAdministrador = false)
     {
-        return new UsuarioResponse(usuario.Id, usuario.EmpresaId, usuario.Email, usuario.Nome, usuario.Status.ToString(), usuario.UltimoBloqueioEm, usuario.PossuiSenhaConfigurada, usuario.Permissoes.ToArray(), usuario.PerfisAcesso.ToArray());
+        return new UsuarioResponse(usuario.Id, usuario.EmpresaId, usuario.Email, usuario.Nome, usuario.Status.ToString(), usuario.UltimoBloqueioEm, usuario.PossuiSenhaConfigurada, usuario.Permissoes.ToArray(), usuario.PerfisAcesso.ToArray(), bootstrapAdministrador);
     }
 
     private static PerfilAcessoResponse MapPerfilAcesso(PerfilAcesso perfilAcesso)
@@ -1860,6 +1866,21 @@ public sealed class ErpApplicationService(IErpStore store)
             var perfilAcesso = new PerfilAcesso(empresaId, perfilPadrao.Nome, perfilPadrao.Permissoes);
             store.PerfisAcesso[perfilAcesso.Id] = perfilAcesso;
         }
+    }
+
+    private void VincularBootstrapAdministrativo(Usuario usuario)
+    {
+        var perfilAdministrador = store.PerfisAcesso.Values.SingleOrDefault(item =>
+            item.EmpresaId == usuario.EmpresaId &&
+            string.Equals(item.Nome, "Administrador", StringComparison.OrdinalIgnoreCase));
+
+        if (perfilAdministrador is null)
+        {
+            throw new NotFoundException("Perfil administrador padrao nao encontrado para bootstrap.");
+        }
+
+        usuario.Ativar();
+        usuario.VincularPerfil(perfilAdministrador.Id);
     }
 
     private static string NormalizeKnownPermission(string permission)

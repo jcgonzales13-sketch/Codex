@@ -175,6 +175,23 @@ Content-Type: application/json
   "nome": "Usuario Alpha"
 }
 
+# Exemplo de resposta esperada para o primeiro usuario da empresa:
+# {
+#   "success": true,
+#   "data": {
+#     "id": "...",
+#     "empresaId": "...",
+#     "email": "alpha@empresa.com",
+#     "nome": "Usuario Alpha",
+#     "status": "Ativo",
+#     "possuiSenhaConfigurada": false,
+#     "permissoes": [],
+#     "perfisAcesso": ["..."],
+#     "bootstrapAdministrador": true
+#   },
+#   "error": null
+# }
+
 ###
 
 POST {{ERP.Api_HostAddress}}/identity/usuarios/{{usuarioCadastroId}}/senha
@@ -208,6 +225,23 @@ Content-Type: application/json
   "senha": "Senha@123"
 }
 
+# Exemplo de resposta esperada:
+# {
+#   "success": true,
+#   "data": {
+#     "accessToken": "...",
+#     "refreshToken": "...",
+#     "tokenType": "Bearer",
+#     "expiresAt": "...",
+#     "sessao": {
+#       "token": "...",
+#       "expiresAt": "...",
+#       "usuario": { "...": "..." }
+#     }
+#   },
+#   "error": null
+# }
+
 ###
 
 POST {{ERP.Api_HostAddress}}/identity/oauth/refresh
@@ -216,6 +250,9 @@ Content-Type: application/json
 {
   "refreshToken": "{{refreshToken}}"
 }
+
+# Exemplo de resposta esperada:
+# novo accessToken + novo refreshToken
 
 ###
 

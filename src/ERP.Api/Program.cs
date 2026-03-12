@@ -128,25 +128,37 @@ app.MapGet("/", () => Results.Ok(ApiResponses.Ok(new
     status = "online",
     storage = builder.Configuration.GetSection(StorageOptions.SectionName).GetValue<string>("Provider") ?? "InMemory",
     modules = new[] { "Empresas", "Fornecedores", "Catalogo", "Clientes", "Depositos", "Compras", "Estoque", "Vendas", "Fiscal", "Identity", "Integracoes" }
-})));
+})))
+.WithSummary("Estado geral da aplicacao.")
+.WithDescription("Retorna status online, provider de storage atual e os modulos carregados pela API. Use este endpoint para confirmar bootstrap, ambiente ativo e disponibilidade basica da aplicacao.")
+.Produces(StatusCodes.Status200OK);
 
 app.MapGet("/health", () => Results.Ok(ApiResponses.Ok(new
 {
     status = "healthy",
     checkedAt = DateTimeOffset.UtcNow
-})));
+})))
+.WithSummary("Health check simples.")
+.WithDescription("Endpoint leve para verificar se a API esta respondendo. Nao depende de autenticacao nem de leitura detalhada do storage.")
+.Produces(StatusCodes.Status200OK);
 
 app.MapGet("/healthz", () => Results.Ok(ApiResponses.Ok(new
 {
     status = "healthy",
     checkedAt = DateTimeOffset.UtcNow
-})));
+})))
+.WithSummary("Health check alternativo.")
+.WithDescription("Alias de health check usado em monitoramento e deploy. Ideal para probes simples de liveness.")
+.Produces(StatusCodes.Status200OK);
 
 app.MapPost("/healthz", () => Results.Ok(ApiResponses.Ok(new
 {
     status = "healthy",
     checkedAt = DateTimeOffset.UtcNow
-})));
+})))
+.WithSummary("Health check manual via POST.")
+.WithDescription("Alias em POST para testes em ferramentas como Postman ou plataformas que validam um endpoint ativo via requisicao manual.")
+.Produces(StatusCodes.Status200OK);
 
 app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
@@ -164,7 +176,9 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
             })
         }));
     }
-});
+})
+.WithSummary("Health check de prontidao.")
+.WithDescription("Executa as verificacoes registradas de health check e retorna o detalhamento por dependencia. Use este endpoint para readiness em deploy e monitoramento operacional.");
 
 app.MapGet("/modules", () => Results.Ok(ApiResponses.Ok(new[]
 {
@@ -179,7 +193,10 @@ app.MapGet("/modules", () => Results.Ok(ApiResponses.Ok(new[]
     new { Name = "Fiscal", Capability = "Autorizacao, rejeicao e cancelamento de notas" },
     new { Name = "Identity", Capability = "Cadastro de usuarios, perfis de acesso, ativacao e permissoes" },
     new { Name = "Integracoes", Capability = "Processamento idempotente de webhooks" }
-})));
+})))
+.WithSummary("Lista os modulos da aplicacao.")
+.WithDescription("Retorna os modulos disponiveis e a capacidade principal de cada um. Serve como inventario funcional rapido da API.")
+.Produces(StatusCodes.Status200OK);
 
 app.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.IOptions<StorageOptions> options) =>
     Results.Ok(ApiResponses.Ok(new StorageStatusResponse(
@@ -195,10 +212,16 @@ app.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.IOp
         store.NotasFiscais.Count,
         store.Saldos.Count,
         store.ChavesImportadas.Count,
-        store.EventosWebhook.Count))));
+        store.EventosWebhook.Count))))
+    .WithSummary("Inspeciona o estado do storage.")
+    .WithDescription("Retorna o provider configurado e contagens atuais das entidades persistidas. E util para diagnostico rapido de volume e confirmacao do backend de armazenamento em uso.")
+    .Produces(StatusCodes.Status200OK);
 
 app.MapGet("/system/events", (string? type, string? sourceModule, int? page, int? pageSize, ErpApplicationService service) =>
-    Results.Ok(ApiResponses.Ok(service.ConsultarEventosIntegracao(new ConsultarEventosIntegracaoRequest(type, sourceModule, page ?? 1, pageSize ?? 20)))));
+    Results.Ok(ApiResponses.Ok(service.ConsultarEventosIntegracao(new ConsultarEventosIntegracaoRequest(type, sourceModule, page ?? 1, pageSize ?? 20)))))
+    .WithSummary("Consulta eventos internos de integracao.")
+    .WithDescription("Lista eventos gerados pelos fluxos integrados entre modulos, com filtros por tipo e modulo de origem. Use para auditoria funcional, suporte e rastreabilidade de operacoes.")
+    .Produces(StatusCodes.Status200OK);
 
 app.MapErpEndpoints();
 

@@ -17,6 +17,6 @@ public sealed record ConsultarPerfisAcessoRequest(Guid? EmpresaId, string? Termo
 public sealed record PermissaoResponse(string Codigo);
 public sealed record PerfilAcessoPadraoResponse(string Nome, IReadOnlyCollection<string> Permissoes);
 public sealed record PerfilAcessoResponse(Guid Id, Guid EmpresaId, string Nome, IReadOnlyCollection<string> Permissoes);
-public sealed record UsuarioResponse(Guid Id, Guid EmpresaId, string Email, string Nome, string Status, DateTimeOffset? UltimoBloqueioEm, bool PossuiSenhaConfigurada, IReadOnlyCollection<string> Permissoes, IReadOnlyCollection<Guid> PerfisAcesso);
+public sealed record UsuarioResponse(Guid Id, Guid EmpresaId, string Email, string Nome, string Status, DateTimeOffset? UltimoBloqueioEm, bool PossuiSenhaConfigurada, IReadOnlyCollection<string> Permissoes, IReadOnlyCollection<Guid> PerfisAcesso, bool BootstrapAdministrador);
 public sealed record SessaoAutenticacaoResponse(string Token, DateTimeOffset ExpiresAt, UsuarioResponse Usuario);
 public sealed record TokenResponse(string AccessToken, string RefreshToken, string TokenType, DateTimeOffset ExpiresAt, SessaoAutenticacaoResponse Sessao);

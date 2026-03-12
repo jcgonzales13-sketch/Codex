@@ -464,11 +464,42 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     }
 
     [Fact]
+    public void Deve_vincular_primeiro_usuario_ao_perfil_administrador_da_empresa()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000146", "Empresa Admin Bootstrap", "Empresa Admin Bootstrap LTDA"));
+
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "admin@empresa.com", "Usuario Admin"));
+        var perfilAdministrador = Assert.Single(service.ConsultarPerfisAcesso(new ConsultarPerfisAcessoRequest(empresa.Id, "Administrador", 1, 10)).Items);
+
+        Assert.Equal("Ativo", usuario.Status);
+        Assert.True(usuario.BootstrapAdministrador);
+        Assert.Contains(perfilAdministrador.Id, usuario.PerfisAcesso);
+    }
+
+    [Fact]
+    public void Primeiro_usuario_deve_conseguir_acesso_admin_apos_definir_senha()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000147", "Empresa Admin Sessao", "Empresa Admin Sessao LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "adminsessao@empresa.com", "Usuario Admin Sessao"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+        var sessao = service.Login(new LoginRequest(empresa.Id, "adminsessao@empresa.com", "Senha@123"));
+
+        var resultado = service.ValidarAcesso(sessao.Token, IdentityPermissions.IdentityManage, empresa.Id);
+
+        Assert.Equal(usuario.Id, resultado.Usuario.Id);
+    }
+
+    [Fact]
     public void Nao_deve_validar_acesso_sem_permissao_necessaria()
     {
         var store = new InMemoryErpStore();
         var service = new ErpApplicationService(store);
         var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000134", "Empresa Permissao", "Empresa Permissao LTDA"));
+        service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "bootstrap-permissao@empresa.com", "Usuario Bootstrap"));
         var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "permissao@empresa.com", "Usuario Permissao"));
         service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
         var sessao = service.Login(new LoginRequest(empresa.Id, "permissao@empresa.com", "Senha@123"));
