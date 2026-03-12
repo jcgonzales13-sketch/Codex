@@ -247,6 +247,10 @@ app.MapGet("/system/metrics", (InMemoryObservabilityCollector observabilityColle
     .Produces(StatusCodes.Status200OK);
 
 app.MapErpEndpoints();
+app.MapGroup("/api/v1")
+    .WithSummary("Superficie versionada v1.")
+    .WithDescription("Agrupa os endpoints versionados da API para evolucao futura sem quebrar os clientes atuais.")
+    .MapErpEndpoints();
 
 app.Run();
 

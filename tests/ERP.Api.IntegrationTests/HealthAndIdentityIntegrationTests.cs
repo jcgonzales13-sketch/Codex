@@ -101,6 +101,22 @@ public sealed class HealthAndIdentityIntegrationTests : IClassFixture<ErpApiFact
     }
 
     [Fact]
+    public async Task Deve_consultar_cliente_pela_superficie_versionada_v1()
+    {
+        using var client = _factory.CreateClient();
+        var seeded = SeedCompanyAndUser();
+        var sessionToken = await RealizarLogin(client, seeded);
+        var clienteId = await CriarCliente(client, seeded.EmpresaId, sessionToken);
+
+        var response = await client.GetAsync($"/api/v1/clientes/{clienteId}");
+
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<JsonElement>>(JsonOptions);
+        Assert.NotNull(envelope);
+        Assert.Equal(clienteId, envelope!.Data.GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Deve_atualizar_fornecedor_via_put_restful()
     {
         using var client = _factory.CreateClient();

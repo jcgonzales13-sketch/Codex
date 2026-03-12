@@ -141,6 +141,11 @@ Accept: application/json
 
 ###
 
+GET {{ERP.Api_HostAddress}}/api/v1/clientes/{{clienteId}}
+Accept: application/json
+
+###
+
 PUT {{ERP.Api_HostAddress}}/clientes/{{clienteId}}
 Content-Type: application/json
 X-Session-Token: {{sessionToken}}

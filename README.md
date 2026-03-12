@@ -10,6 +10,7 @@ A borda HTTP das entidades CRUD principais foi alinhada para um modelo mais REST
 - `PUT /recurso/{id}` para atualizacao completa do cadastro
 - `PATCH /recurso/{id}` para atualizacao parcial, preservando campos omitidos
 - `DELETE /recurso/{id}` para inativacao logica onde o dominio usa soft delete
+- prefixo opcional `/api/v1` para a superficie versionada de negocio
 - `POST` permanece nas acoes de dominio, como `aprovar`, `reservar`, `autorizar`, `bloquear` e operacoes semelhantes
 
 ## Visao Geral
