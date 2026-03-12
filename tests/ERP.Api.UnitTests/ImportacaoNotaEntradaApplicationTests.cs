@@ -5,6 +5,7 @@ using ERP.Api.Application.Storage;
 using ERP.BuildingBlocks;
 using ERP.Modules.Catalogo;
 using ERP.Modules.Fiscal;
+using Microsoft.Extensions.Options;
 
 namespace ERP.Api.UnitTests;
 
@@ -384,6 +385,57 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     }
 
     [Fact]
+    public void Deve_emitir_jwt_valido_a_partir_da_sessao_autenticada()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var jwtService = new JwtTokenService(Options.Create(new JwtOptions
+        {
+            Issuer = "CodexERP.Tests",
+            Audience = "CodexERP.Tests.Clients",
+            SigningKey = "TEST_SIGNING_KEY_12345678901234567890",
+            AccessTokenExpirationMinutes = 60
+        }));
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000144", "Empresa Jwt", "Empresa Jwt LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "jwt@empresa.com", "Usuario Jwt"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+
+        var sessao = service.Login(new LoginRequest(empresa.Id, "jwt@empresa.com", "Senha@123"));
+        var accessToken = jwtService.GenerateAccessToken(sessao);
+        var extractedSessionToken = jwtService.ExtractSessionToken(accessToken);
+
+        Assert.False(string.IsNullOrWhiteSpace(accessToken));
+        Assert.Equal(sessao.Token, extractedSessionToken);
+    }
+
+    [Fact]
+    public void Deve_renovar_sessao_com_refresh_token()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var jwtService = new JwtTokenService(Options.Create(new JwtOptions
+        {
+            Issuer = "CodexERP.Tests",
+            Audience = "CodexERP.Tests.Clients",
+            SigningKey = "TEST_SIGNING_KEY_12345678901234567890",
+            AccessTokenExpirationMinutes = 60,
+            RefreshTokenExpirationDays = 30
+        }));
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000145", "Empresa Refresh", "Empresa Refresh LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "refresh@empresa.com", "Usuario Refresh"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+
+        var sessao = service.Login(new LoginRequest(empresa.Id, "refresh@empresa.com", "Senha@123"));
+        var refreshToken = jwtService.GenerateRefreshToken();
+        service.RegistrarRefreshToken(sessao.Token, refreshToken, jwtService.GetRefreshTokenExpiration());
+
+        var sessaoRenovada = service.RenovarSessaoComRefreshToken(new RefreshTokenRequest(refreshToken));
+
+        Assert.NotEqual(sessao.Token, sessaoRenovada.Token);
+        Assert.Equal(usuario.Id, sessaoRenovada.Usuario.Id);
+    }
+
+    [Fact]
     public void Nao_deve_permitir_login_com_credenciais_invalidas()
     {
         var store = new InMemoryErpStore();
@@ -456,6 +508,31 @@ public sealed class ImportacaoNotaEntradaApplicationTests
     }
 
     [Fact]
+    public void Deve_criar_perfis_padrao_ao_cadastrar_empresa()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000142", "Empresa Perfis Padrao", "Empresa Perfis Padrao LTDA"));
+        var perfis = service.ConsultarPerfisAcesso(new ConsultarPerfisAcessoRequest(empresa.Id, null, 1, 20));
+
+        Assert.Contains(perfis.Items, item => item.Nome == "Administrador");
+        Assert.Contains(perfis.Items, item => item.Nome == "Operador de Estoque");
+        Assert.Contains(perfis.Items, item => item.Nome == "Compras");
+    }
+
+    [Fact]
+    public void Deve_listar_catalogo_de_perfis_padrao()
+    {
+        var service = new ErpApplicationService(new InMemoryErpStore());
+
+        var perfisPadrao = service.ListarPerfisAcessoPadrao();
+
+        Assert.Contains(perfisPadrao, item => item.Nome == "Administrador" && item.Permissoes.Contains(IdentityPermissions.Admin));
+        Assert.Contains(perfisPadrao, item => item.Nome == "Vendas" && item.Permissoes.Contains(IdentityPermissions.VendasManage));
+    }
+
+    [Fact]
     public void Nao_deve_conceder_permissao_desconhecida()
     {
         var store = new InMemoryErpStore();
@@ -466,6 +543,40 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         var exception = Assert.Throws<DomainException>(() => service.ConcederPermissao(usuario.Id, new ConcederPermissaoRequest("PERMISSAO_QUE_NAO_EXISTE")));
 
         Assert.Equal("Permissao informada nao e suportada.", exception.Message);
+    }
+
+    [Fact]
+    public void Deve_herdar_permissao_de_perfil_de_acesso_na_validacao_da_sessao()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000139", "Empresa Perfil", "Empresa Perfil LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "perfil@empresa.com", "Usuario Perfil"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+        var perfil = Assert.Single(service.ConsultarPerfisAcesso(new ConsultarPerfisAcessoRequest(empresa.Id, "Operador de Estoque", 1, 10)).Items);
+        service.VincularPerfilAcesso(usuario.Id, new VincularPerfilAcessoRequest(perfil.Id));
+        var sessao = service.Login(new LoginRequest(empresa.Id, "perfil@empresa.com", "Senha@123"));
+
+        var resultado = service.ValidarAcesso(sessao.Token, IdentityPermissions.EstoqueManage, empresa.Id);
+
+        Assert.Equal(usuario.Id, resultado.Usuario.Id);
+        Assert.Contains(perfil.Id, resultado.Usuario.PerfisAcesso);
+    }
+
+    [Fact]
+    public void Nao_deve_vincular_perfil_de_outra_empresa_ao_usuario()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresaUsuario = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000140", "Empresa Usuario Perfil", "Empresa Usuario Perfil LTDA"));
+        var empresaPerfil = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000141", "Empresa Perfil Externo", "Empresa Perfil Externo LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresaUsuario.Id, "perfilcruzado@empresa.com", "Usuario Perfil Cruzado"));
+        service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
+        var perfil = service.CadastrarPerfilAcesso(new CreatePerfilAcessoRequest(empresaPerfil.Id, "Perfil Externo", [IdentityPermissions.ClientesManage]));
+
+        var exception = Assert.Throws<DomainException>(() => service.VincularPerfilAcesso(usuario.Id, new VincularPerfilAcessoRequest(perfil.Id)));
+
+        Assert.Equal("Perfil de acesso informado pertence a outra empresa do usuario.", exception.Message);
     }
 
     [Fact]

@@ -57,6 +57,7 @@ public sealed class ErpApplicationService(IErpStore store)
             var repository = new EmpresaRepository(store);
             var service = new CadastroEmpresaService(repository);
             var empresa = service.Cadastrar(request.Documento, request.NomeFantasia, request.RazaoSocial);
+            EnsurePerfisPadraoEmpresa(empresa.Id);
             AddIntegrationEvent("empresas.empresa_cadastrada", "Empresas", empresa.Id.ToString(), $"Empresa {empresa.Documento} cadastrada.");
             store.Persist();
             return MapEmpresa(empresa);
@@ -510,6 +511,63 @@ public sealed class ErpApplicationService(IErpStore store)
             .ToArray();
     }
 
+    public IReadOnlyCollection<PerfilAcessoPadraoResponse> ListarPerfisAcessoPadrao()
+    {
+        return IdentityPermissions.DefaultProfiles
+            .Select(item => new PerfilAcessoPadraoResponse(item.Nome, item.Permissoes.ToArray()))
+            .ToArray();
+    }
+
+    public PagedResponse<PerfilAcessoResponse> ConsultarPerfisAcesso(ConsultarPerfisAcessoRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var query = store.PerfisAcesso.Values.AsEnumerable();
+            if (request.EmpresaId is not null)
+            {
+                query = query.Where(item => item.EmpresaId == request.EmpresaId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Termo))
+            {
+                var termo = request.Termo.Trim();
+                query = query.Where(item =>
+                    item.Nome.Contains(termo, StringComparison.OrdinalIgnoreCase) ||
+                    item.Permissoes.Any(permissao => permissao.Contains(termo, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            return ToPagedResponse(query.Select(MapPerfilAcesso), request.Page, request.PageSize);
+        }
+    }
+
+    public PerfilAcessoResponse CadastrarPerfilAcesso(CreatePerfilAcessoRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
+            _ = GetEmpresaOperacional(request.EmpresaId);
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
+            var repository = new PerfilAcessoRepository(store);
+            var service = new CadastroPerfilAcessoService(repository);
+            var perfilAcesso = service.Cadastrar(request.EmpresaId, request.Nome, NormalizeKnownPermissions(request.Permissoes));
+            AddIntegrationEvent("identity.perfil_cadastrado", "Identity", perfilAcesso.Id.ToString(), $"Perfil de acesso {perfilAcesso.Nome} cadastrado.");
+            store.Persist();
+            return MapPerfilAcesso(perfilAcesso);
+        }
+    }
+
+    public PerfilAcessoResponse AtualizarPerfilAcesso(Guid perfilAcessoId, AtualizarPerfilAcessoRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
+            var perfilAcesso = GetPerfilAcesso(perfilAcessoId);
+            perfilAcesso.Atualizar(request.Nome, NormalizeKnownPermissions(request.Permissoes));
+            store.Persist();
+            return MapPerfilAcesso(perfilAcesso);
+        }
+    }
+
     public UsuarioResponse CadastrarUsuario(CreateUsuarioRequest request)
     {
         lock (store.SyncRoot)
@@ -573,6 +631,14 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             return GetUsuario(usuarioId).EmpresaId;
+        }
+    }
+
+    public Guid ObterEmpresaIdDoPerfilAcesso(Guid perfilAcessoId)
+    {
+        lock (store.SyncRoot)
+        {
+            return GetPerfilAcesso(perfilAcessoId).EmpresaId;
         }
     }
 
@@ -646,15 +712,7 @@ public sealed class ErpApplicationService(IErpStore store)
                 throw new DomainException("Credenciais invalidas.");
             }
 
-            var now = DateTimeOffset.UtcNow;
-            store.SessoesAutenticacao.RemoveAll(item => item.UsuarioId == usuario.Id || item.ExpiraEm <= now);
-
-            var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
-                .Replace('+', '-')
-                .Replace('/', '_')
-                .TrimEnd('=');
-            var sessao = new SessaoAutenticacaoRegistro(token, usuario.Id, usuario.EmpresaId, usuario.Email, now, now.AddHours(12));
-            store.SessoesAutenticacao.Add(sessao);
+            var sessao = CreateSession(usuario);
             AddIntegrationEvent("identity.login_realizado", "Identity", usuario.Id.ToString(), $"Login realizado para {usuario.Email}.");
             store.Persist();
             return new SessaoAutenticacaoResponse(sessao.Token, sessao.ExpiraEm, MapUsuario(usuario));
@@ -677,13 +735,49 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Token, "Token");
-            var removidos = store.SessoesAutenticacao.RemoveAll(item => string.Equals(item.Token, request.Token.Trim(), StringComparison.Ordinal));
+            var token = request.Token!.Trim();
+            var removidos = store.SessoesAutenticacao.RemoveAll(item => string.Equals(item.Token, token, StringComparison.Ordinal));
+            store.RefreshTokens.RemoveAll(item => string.Equals(item.SessionToken, token, StringComparison.Ordinal));
             if (removidos == 0)
             {
                 throw new NotFoundException("Sessao de autenticacao nao encontrada.");
             }
 
             store.Persist();
+        }
+    }
+
+    public void RegistrarRefreshToken(string sessionToken, string refreshToken, DateTimeOffset expiresAt)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(sessionToken, "SessionToken");
+            ApplicationGuard.AgainstNullOrWhiteSpace(refreshToken, "RefreshToken");
+            var sessao = GetSessaoAtiva(sessionToken);
+            store.RefreshTokens.RemoveAll(item => item.UsuarioId == sessao.UsuarioId || item.ExpiraEm <= DateTimeOffset.UtcNow);
+            store.RefreshTokens.Add(new RefreshTokenRegistro(refreshToken.Trim(), sessao.Token, sessao.UsuarioId, DateTimeOffset.UtcNow, expiresAt));
+            store.Persist();
+        }
+    }
+
+    public SessaoAutenticacaoResponse RenovarSessaoComRefreshToken(RefreshTokenRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstNullOrWhiteSpace(request.RefreshToken, "RefreshToken");
+            var refreshToken = GetRefreshTokenAtivo(request.RefreshToken);
+            store.RefreshTokens.RemoveAll(item => string.Equals(item.Token, refreshToken.Token, StringComparison.Ordinal));
+            store.SessoesAutenticacao.RemoveAll(item => item.UsuarioId == refreshToken.UsuarioId || item.ExpiraEm <= DateTimeOffset.UtcNow);
+
+            var usuario = GetUsuario(refreshToken.UsuarioId);
+            if (usuario.Status != StatusUsuario.Ativo)
+            {
+                throw new UnauthorizedAccessException("Usuario autenticado nao esta ativo.");
+            }
+
+            var sessao = CreateSession(usuario);
+            store.Persist();
+            return new SessaoAutenticacaoResponse(sessao.Token, sessao.ExpiraEm, MapUsuario(usuario));
         }
     }
 
@@ -705,13 +799,9 @@ public sealed class ErpApplicationService(IErpStore store)
                 throw new ForbiddenException("Sessao autenticada nao pertence a empresa informada.");
             }
 
-            var permissaoNormalizada = IdentityPermissions.Normalize(permissao);
-            if (!IdentityPermissions.IsKnown(permissaoNormalizada))
-            {
-                throw new DomainException("Permissao informada nao e suportada.");
-            }
-
-            var possuiAcesso = usuario.Permissoes.Contains(IdentityPermissions.Admin) || usuario.Permissoes.Contains(permissaoNormalizada);
+            var permissaoNormalizada = NormalizeKnownPermission(permissao);
+            var permissoesEfetivas = ResolvePermissoesEfetivas(usuario);
+            var possuiAcesso = permissoesEfetivas.Contains(IdentityPermissions.Admin) || permissoesEfetivas.Contains(permissaoNormalizada);
             if (!possuiAcesso)
             {
                 throw new ForbiddenException("Usuario autenticado nao possui permissao para esta operacao.");
@@ -726,14 +816,23 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Permissao, "Permissao");
-            var permissaoNormalizada = IdentityPermissions.Normalize(request.Permissao);
-            if (!IdentityPermissions.IsKnown(permissaoNormalizada))
-            {
-                throw new DomainException("Permissao informada nao e suportada.");
-            }
-
+            var permissaoNormalizada = NormalizeKnownPermission(request.Permissao);
             var usuario = GetUsuario(usuarioId);
             usuario.ConcederPermissao(permissaoNormalizada);
+            store.Persist();
+            return MapUsuario(usuario);
+        }
+    }
+
+    public UsuarioResponse VincularPerfilAcesso(Guid usuarioId, VincularPerfilAcessoRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            ApplicationGuard.AgainstEmptyGuid(request.PerfilAcessoId, "PerfilAcessoId");
+            var usuario = GetUsuario(usuarioId);
+            var perfilAcesso = GetPerfilAcesso(request.PerfilAcessoId);
+            EnsureSameEmpresa(usuario.EmpresaId, perfilAcesso.EmpresaId, "Perfil de acesso informado pertence a outra empresa do usuario.");
+            usuario.VincularPerfil(perfilAcesso.Id);
             store.Persist();
             return MapUsuario(usuario);
         }
@@ -1436,6 +1535,16 @@ public sealed class ErpApplicationService(IErpStore store)
         return usuario;
     }
 
+    private PerfilAcesso GetPerfilAcesso(Guid perfilAcessoId)
+    {
+        if (!store.PerfisAcesso.TryGetValue(perfilAcessoId, out var perfilAcesso))
+        {
+            throw new NotFoundException("Perfil de acesso nao encontrado.");
+        }
+
+        return perfilAcesso;
+    }
+
     private SessaoAutenticacaoRegistro GetSessaoAtiva(string token)
     {
         var now = DateTimeOffset.UtcNow;
@@ -1447,6 +1556,19 @@ public sealed class ErpApplicationService(IErpStore store)
         }
 
         return sessao;
+    }
+
+    private RefreshTokenRegistro GetRefreshTokenAtivo(string token)
+    {
+        var now = DateTimeOffset.UtcNow;
+        store.RefreshTokens.RemoveAll(item => item.ExpiraEm <= now);
+        var refreshToken = store.RefreshTokens.SingleOrDefault(item => string.Equals(item.Token, token.Trim(), StringComparison.Ordinal));
+        if (refreshToken is null)
+        {
+            throw new NotFoundException("Refresh token nao encontrado.");
+        }
+
+        return refreshToken;
     }
 
     private Cliente GetCliente(Guid clienteId)
@@ -1538,7 +1660,12 @@ public sealed class ErpApplicationService(IErpStore store)
 
     private static UsuarioResponse MapUsuario(Usuario usuario)
     {
-        return new UsuarioResponse(usuario.Id, usuario.EmpresaId, usuario.Email, usuario.Nome, usuario.Status.ToString(), usuario.UltimoBloqueioEm, usuario.PossuiSenhaConfigurada, usuario.Permissoes.ToArray());
+        return new UsuarioResponse(usuario.Id, usuario.EmpresaId, usuario.Email, usuario.Nome, usuario.Status.ToString(), usuario.UltimoBloqueioEm, usuario.PossuiSenhaConfigurada, usuario.Permissoes.ToArray(), usuario.PerfisAcesso.ToArray());
+    }
+
+    private static PerfilAcessoResponse MapPerfilAcesso(PerfilAcesso perfilAcesso)
+    {
+        return new PerfilAcessoResponse(perfilAcesso.Id, perfilAcesso.EmpresaId, perfilAcesso.Nome, perfilAcesso.Permissoes.ToArray());
     }
 
     private static ClienteResponse MapCliente(Cliente cliente)
@@ -1703,6 +1830,76 @@ public sealed class ErpApplicationService(IErpStore store)
         store.MovimentosEstoque.Add(movimento);
     }
 
+    private SessaoAutenticacaoRegistro CreateSession(Usuario usuario)
+    {
+        var now = DateTimeOffset.UtcNow;
+        store.SessoesAutenticacao.RemoveAll(item => item.UsuarioId == usuario.Id || item.ExpiraEm <= now);
+
+        var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+        var sessao = new SessaoAutenticacaoRegistro(token, usuario.Id, usuario.EmpresaId, usuario.Email, now, now.AddHours(12));
+        store.SessoesAutenticacao.Add(sessao);
+        return sessao;
+    }
+
+    private void EnsurePerfisPadraoEmpresa(Guid empresaId)
+    {
+        foreach (var perfilPadrao in IdentityPermissions.DefaultProfiles)
+        {
+            var existe = store.PerfisAcesso.Values.Any(item =>
+                item.EmpresaId == empresaId &&
+                string.Equals(item.Nome, perfilPadrao.Nome, StringComparison.OrdinalIgnoreCase));
+
+            if (existe)
+            {
+                continue;
+            }
+
+            var perfilAcesso = new PerfilAcesso(empresaId, perfilPadrao.Nome, perfilPadrao.Permissoes);
+            store.PerfisAcesso[perfilAcesso.Id] = perfilAcesso;
+        }
+    }
+
+    private static string NormalizeKnownPermission(string permission)
+    {
+        var normalized = IdentityPermissions.Normalize(permission);
+        if (!IdentityPermissions.IsKnown(normalized))
+        {
+            throw new DomainException("Permissao informada nao e suportada.");
+        }
+
+        return normalized;
+    }
+
+    private static IReadOnlyCollection<string> NormalizeKnownPermissions(IEnumerable<string> permissions)
+    {
+        return (permissions ?? [])
+            .Select(NormalizeKnownPermission)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private IReadOnlyCollection<string> ResolvePermissoesEfetivas(Usuario usuario)
+    {
+        var permissoes = new HashSet<string>(usuario.Permissoes, StringComparer.Ordinal);
+        foreach (var perfilAcessoId in usuario.PerfisAcesso)
+        {
+            if (!store.PerfisAcesso.TryGetValue(perfilAcessoId, out var perfilAcesso))
+            {
+                continue;
+            }
+
+            foreach (var permissao in perfilAcesso.Permissoes)
+            {
+                permissoes.Add(permissao);
+            }
+        }
+
+        return permissoes;
+    }
+
     private T ExecuteInLogicalTransaction<T>(Func<T> action)
     {
         var snapshot = ErpSnapshotSerializer.Serialize(store);
@@ -1765,6 +1962,16 @@ public sealed class ErpApplicationService(IErpStore store)
             store.Usuarios.Values.Any(usuario => usuario.EmpresaId == empresaId && string.Equals(usuario.Email, email.Trim(), StringComparison.OrdinalIgnoreCase));
 
         public void Add(Usuario usuario) => store.Usuarios[usuario.Id] = usuario;
+    }
+
+    private sealed class PerfilAcessoRepository(IErpStore store) : IPerfilAcessoRepository
+    {
+        public bool NomeJaExiste(Guid empresaId, string nome) =>
+            store.PerfisAcesso.Values.Any(perfil =>
+                perfil.EmpresaId == empresaId &&
+                string.Equals(perfil.Nome, nome.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        public void Add(PerfilAcesso perfilAcesso) => store.PerfisAcesso[perfilAcesso.Id] = perfilAcesso;
     }
 
     private sealed class NotaEntradaRepository(IErpStore store) : INotaEntradaRepository

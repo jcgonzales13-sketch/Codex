@@ -36,6 +36,7 @@ public sealed class SqlServerErpStore : IErpStore
     public Dictionary<Guid, Cliente> Clientes { get; } = [];
     public Dictionary<Guid, Deposito> Depositos { get; } = [];
     public Dictionary<Guid, Usuario> Usuarios { get; } = [];
+    public Dictionary<Guid, PerfilAcesso> PerfisAcesso { get; } = [];
     public Dictionary<Guid, PedidoVenda> Pedidos { get; } = [];
     public Dictionary<Guid, NotaFiscal> NotasFiscais { get; } = [];
     public Dictionary<(Guid ProdutoId, Guid DepositoId), SaldoEstoque> Saldos { get; } = [];
@@ -45,6 +46,7 @@ public sealed class SqlServerErpStore : IErpStore
     public List<ImportacaoNotaEntradaRegistro> ImportacoesNotaEntrada { get; } = [];
     public List<WebhookProcessadoRegistro> WebhooksProcessados { get; } = [];
     public List<SessaoAutenticacaoRegistro> SessoesAutenticacao { get; } = [];
+    public List<RefreshTokenRegistro> RefreshTokens { get; } = [];
     public List<IntegrationEvent> IntegrationEvents { get; } = [];
 
     public void Persist()

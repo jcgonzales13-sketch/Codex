@@ -12,10 +12,12 @@
 @pedidoId = 55555555-5555-5555-5555-555555555555
 @notaId = 66666666-6666-6666-6666-666666666666
 @sessionToken = informe-token-aqui
+@accessToken = informe-access-token-aqui
+@refreshToken = informe-refresh-token-aqui
 
 # Todas as respostas agora seguem o envelope:
 # { "success": true|false, "data": ..., "error": { "code": "...", "message": "..." } }
-# Operacoes mutaveis protegidas exigem o header `X-Session-Token`.
+# Operacoes mutaveis protegidas exigem `Authorization: Bearer ...` ou `X-Session-Token`.
 
 GET {{ERP.Api_HostAddress}}/
 Accept: application/json
@@ -154,6 +156,16 @@ Accept: application/json
 
 ###
 
+GET {{ERP.Api_HostAddress}}/identity/perfis/padroes
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/identity/perfis?empresaId={{empresaId}}&page=1&pageSize=20&termo=estoque
+Accept: application/json
+
+###
+
 POST {{ERP.Api_HostAddress}}/identity/usuarios
 Content-Type: application/json
 
@@ -187,12 +199,56 @@ Content-Type: application/json
 
 ###
 
+POST {{ERP.Api_HostAddress}}/identity/oauth/token
+Content-Type: application/json
+
+{
+  "empresaId": "{{empresaId}}",
+  "email": "alpha@empresa.com",
+  "senha": "Senha@123"
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/identity/oauth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+###
+
 POST {{ERP.Api_HostAddress}}/identity/usuarios/{{usuarioCadastroId}}/permissoes
 Content-Type: application/json
-X-Session-Token: {{sessionToken}}
+Authorization: Bearer {{accessToken}}
 
 {
   "permissao": "ADMIN"
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/identity/perfis
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "empresaId": "{{empresaId}}",
+  "nome": "Operador de Estoque",
+  "permissoes": [
+    "ESTOQUE_MANAGE"
+  ]
+}
+
+###
+
+POST {{ERP.Api_HostAddress}}/identity/usuarios/{{usuarioCadastroId}}/perfis
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "perfilAcessoId": "dddddddd-dddd-dddd-dddd-dddddddddddd"
 }
 
 ###

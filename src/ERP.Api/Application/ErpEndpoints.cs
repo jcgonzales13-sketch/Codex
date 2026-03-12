@@ -1,6 +1,7 @@
 using ERP.BuildingBlocks;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Security;
+using Microsoft.Net.Http.Headers;
 
 namespace ERP.Api.Application;
 
@@ -153,8 +154,23 @@ public static class ErpEndpoints
         var identity = app.MapGroup("/identity").WithTags("Identity");
         identity.MapGet("/permissoes", (ErpApplicationService service) =>
             Results.Ok(ApiResponses.Ok(service.ListarPermissoes())));
+        identity.MapGet("/perfis/padroes", (ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ListarPerfisAcessoPadrao())));
+        identity.MapGet("/perfis", (Guid? empresaId, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ConsultarPerfisAcesso(new ConsultarPerfisAcessoRequest(empresaId, termo, page ?? 1, pageSize ?? 20)))));
         identity.MapGet("/usuarios", (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
             Results.Ok(ApiResponses.Ok(service.ConsultarUsuarios(new ConsultarUsuariosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))));
+        identity.MapPost("/perfis", (HttpContext httpContext, CreatePerfilAcessoRequest request, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, request.EmpresaId);
+            var response = service.CadastrarPerfilAcesso(request);
+            return Results.Created($"/identity/perfis/{response.Id}", ApiResponses.Ok(response));
+        });
+        identity.MapPost("/perfis/{perfilAcessoId:guid}/atualizar", (HttpContext httpContext, Guid perfilAcessoId, AtualizarPerfilAcessoRequest request, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoPerfilAcesso(perfilAcessoId));
+            return Results.Ok(ApiResponses.Ok(service.AtualizarPerfilAcesso(perfilAcessoId, request)));
+        });
         identity.MapPost("/usuarios", (HttpContext httpContext, CreateUsuarioRequest request, ErpApplicationService service) =>
         {
             if (!service.PermiteBootstrapIdentity(request.EmpresaId))
@@ -184,10 +200,40 @@ public static class ErpEndpoints
             RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoUsuario(usuarioId));
             return Results.Ok(ApiResponses.Ok(service.ConcederPermissao(usuarioId, request)));
         });
-        identity.MapPost("/auth/login", (LoginRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.Login(request))));
-        identity.MapPost("/auth/logout", (LogoutRequest request, ErpApplicationService service) =>
+        identity.MapPost("/usuarios/{usuarioId:guid}/perfis", (HttpContext httpContext, Guid usuarioId, VincularPerfilAcessoRequest request, ErpApplicationService service) =>
         {
-            service.Logout(request);
+            RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoUsuario(usuarioId));
+            return Results.Ok(ApiResponses.Ok(service.VincularPerfilAcesso(usuarioId, request)));
+        });
+        identity.MapPost("/auth/login", (LoginRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.Login(request))));
+        identity.MapPost("/oauth/token", (TokenRequest request, ErpApplicationService service, JwtTokenService jwtTokenService) =>
+        {
+            var sessao = service.Login(new LoginRequest(request.EmpresaId, request.Email, request.Senha));
+            var refreshToken = jwtTokenService.GenerateRefreshToken();
+            service.RegistrarRefreshToken(sessao.Token, refreshToken, jwtTokenService.GetRefreshTokenExpiration());
+            return Results.Ok(ApiResponses.Ok(new TokenResponse(
+                jwtTokenService.GenerateAccessToken(sessao),
+                refreshToken,
+                "Bearer",
+                sessao.ExpiresAt,
+                sessao)));
+        });
+        identity.MapPost("/oauth/refresh", (RefreshTokenRequest request, ErpApplicationService service, JwtTokenService jwtTokenService) =>
+        {
+            var sessao = service.RenovarSessaoComRefreshToken(request);
+            var refreshToken = jwtTokenService.GenerateRefreshToken();
+            service.RegistrarRefreshToken(sessao.Token, refreshToken, jwtTokenService.GetRefreshTokenExpiration());
+            return Results.Ok(ApiResponses.Ok(new TokenResponse(
+                jwtTokenService.GenerateAccessToken(sessao),
+                refreshToken,
+                "Bearer",
+                sessao.ExpiresAt,
+                sessao)));
+        });
+        identity.MapPost("/auth/logout", (HttpContext httpContext, LogoutRequest request, ErpApplicationService service) =>
+        {
+            var sessionToken = !string.IsNullOrWhiteSpace(request.Token) ? request.Token! : ResolveSessionToken(httpContext);
+            service.Logout(new LogoutRequest(sessionToken));
             return Results.Ok(ApiResponses.Ok(new { success = true }));
         });
         identity.MapPost("/auth/sessao", (ConsultarSessaoRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.ConsultarSessao(request))));
@@ -325,11 +371,27 @@ public static class ErpEndpoints
 
     private static void RequirePermission(HttpContext httpContext, ErpApplicationService service, string permission, Guid? empresaId = null)
     {
-        if (!httpContext.Request.Headers.TryGetValue(SessionHeader, out var headerValues) || string.IsNullOrWhiteSpace(headerValues.FirstOrDefault()))
+        var sessionToken = ResolveSessionToken(httpContext);
+        service.ValidarAcesso(sessionToken, permission, empresaId);
+    }
+
+    private static string ResolveSessionToken(HttpContext httpContext)
+    {
+        if (httpContext.Request.Headers.TryGetValue(HeaderNames.Authorization, out var authHeaderValues))
         {
-            throw new UnauthorizedAccessException("Header X-Session-Token e obrigatorio.");
+            var bearer = authHeaderValues.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(bearer) && bearer.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                var jwtTokenService = httpContext.RequestServices.GetRequiredService<JwtTokenService>();
+                return jwtTokenService.ExtractSessionToken(bearer["Bearer ".Length..].Trim());
+            }
         }
 
-        service.ValidarAcesso(headerValues.First()!, permission, empresaId);
+        if (httpContext.Request.Headers.TryGetValue(SessionHeader, out var headerValues) && !string.IsNullOrWhiteSpace(headerValues.FirstOrDefault()))
+        {
+            return headerValues.First()!;
+        }
+
+        throw new UnauthorizedAccessException("Authorization Bearer ou header X-Session-Token e obrigatorio.");
     }
 }

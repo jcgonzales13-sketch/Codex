@@ -14,6 +14,7 @@ public enum StatusUsuario
 public sealed class Usuario
 {
     private readonly HashSet<string> _permissoes = [];
+    private readonly HashSet<Guid> _perfisAcesso = [];
 
     public Usuario(Guid empresaId, string email, string nome)
     {
@@ -45,6 +46,7 @@ public sealed class Usuario
     public StatusUsuario Status { get; private set; } = StatusUsuario.PendenteAtivacao;
     public DateTimeOffset? UltimoBloqueioEm { get; private set; }
     public IReadOnlyCollection<string> Permissoes => _permissoes;
+    public IReadOnlyCollection<Guid> PerfisAcesso => _perfisAcesso;
     public bool PossuiSenhaConfigurada => !string.IsNullOrWhiteSpace(PasswordHash);
     public string? PasswordHash { get; private set; }
 
@@ -82,6 +84,21 @@ public sealed class Usuario
         }
 
         _permissoes.Add(permissao.Trim().ToUpperInvariant());
+    }
+
+    public void VincularPerfil(Guid perfilAcessoId)
+    {
+        if (Status != StatusUsuario.Ativo)
+        {
+            throw new DomainException("Somente usuario ativo pode receber perfil de acesso.");
+        }
+
+        if (perfilAcessoId == Guid.Empty)
+        {
+            throw new DomainException("Perfil de acesso informado e invalido.");
+        }
+
+        _perfisAcesso.Add(perfilAcessoId);
     }
 
     public void DefinirSenha(string senha, bool ativarUsuario)
@@ -130,10 +147,75 @@ public sealed class Usuario
     }
 }
 
+public sealed class PerfilAcesso
+{
+    private readonly HashSet<string> _permissoes = [];
+
+    public PerfilAcesso(Guid empresaId, string nome, IEnumerable<string> permissoes)
+    {
+        if (empresaId == Guid.Empty)
+        {
+            throw new DomainException("Perfil de acesso deve estar vinculado a uma empresa valida.");
+        }
+
+        if (string.IsNullOrWhiteSpace(nome))
+        {
+            throw new DomainException("Nome do perfil de acesso e obrigatorio.");
+        }
+
+        Id = Guid.NewGuid();
+        EmpresaId = empresaId;
+        Nome = nome.Trim();
+        DefinirPermissoes(permissoes);
+    }
+
+    public Guid Id { get; }
+    public Guid EmpresaId { get; }
+    public string Nome { get; private set; }
+    public IReadOnlyCollection<string> Permissoes => _permissoes;
+
+    public void Atualizar(string nome, IEnumerable<string> permissoes)
+    {
+        if (string.IsNullOrWhiteSpace(nome))
+        {
+            throw new DomainException("Nome do perfil de acesso e obrigatorio.");
+        }
+
+        Nome = nome.Trim();
+        DefinirPermissoes(permissoes);
+    }
+
+    private void DefinirPermissoes(IEnumerable<string> permissoes)
+    {
+        var permissoesNormalizadas = (permissoes ?? [])
+            .Select(item => item?.Trim().ToUpperInvariant())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (permissoesNormalizadas.Length == 0)
+        {
+            throw new DomainException("Perfil de acesso deve possuir ao menos uma permissao.");
+        }
+
+        _permissoes.Clear();
+        foreach (var permissao in permissoesNormalizadas)
+        {
+            _permissoes.Add(permissao!);
+        }
+    }
+}
+
 public interface IUsuarioRepository
 {
     bool EmailJaExiste(Guid empresaId, string email);
     void Add(Usuario usuario);
+}
+
+public interface IPerfilAcessoRepository
+{
+    bool NomeJaExiste(Guid empresaId, string nome);
+    void Add(PerfilAcesso perfilAcesso);
 }
 
 public sealed class CadastroUsuarioService(IUsuarioRepository repository)
@@ -148,5 +230,20 @@ public sealed class CadastroUsuarioService(IUsuarioRepository repository)
         var usuario = new Usuario(empresaId, email, nome);
         repository.Add(usuario);
         return usuario;
+    }
+}
+
+public sealed class CadastroPerfilAcessoService(IPerfilAcessoRepository repository)
+{
+    public PerfilAcesso Cadastrar(Guid empresaId, string nome, IEnumerable<string> permissoes)
+    {
+        if (repository.NomeJaExiste(empresaId, nome))
+        {
+            throw new DomainException("Ja existe perfil de acesso cadastrado com este nome na empresa.");
+        }
+
+        var perfilAcesso = new PerfilAcesso(empresaId, nome, permissoes);
+        repository.Add(perfilAcesso);
+        return perfilAcesso;
     }
 }

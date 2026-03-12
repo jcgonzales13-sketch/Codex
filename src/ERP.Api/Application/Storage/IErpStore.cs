@@ -20,6 +20,7 @@ public interface IErpStore
     Dictionary<Guid, Cliente> Clientes { get; }
     Dictionary<Guid, Deposito> Depositos { get; }
     Dictionary<Guid, Usuario> Usuarios { get; }
+    Dictionary<Guid, PerfilAcesso> PerfisAcesso { get; }
     Dictionary<Guid, PedidoVenda> Pedidos { get; }
     Dictionary<Guid, NotaFiscal> NotasFiscais { get; }
     Dictionary<(Guid ProdutoId, Guid DepositoId), SaldoEstoque> Saldos { get; }
@@ -29,6 +30,7 @@ public interface IErpStore
     List<ImportacaoNotaEntradaRegistro> ImportacoesNotaEntrada { get; }
     List<WebhookProcessadoRegistro> WebhooksProcessados { get; }
     List<SessaoAutenticacaoRegistro> SessoesAutenticacao { get; }
+    List<RefreshTokenRegistro> RefreshTokens { get; }
     List<IntegrationEvent> IntegrationEvents { get; }
     void Persist();
 }

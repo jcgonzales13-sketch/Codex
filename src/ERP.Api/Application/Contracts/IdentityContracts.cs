@@ -1,13 +1,22 @@
 namespace ERP.Api.Application.Contracts;
 
 public sealed record CreateUsuarioRequest(Guid EmpresaId, string Email, string Nome);
+public sealed record CreatePerfilAcessoRequest(Guid EmpresaId, string Nome, IReadOnlyCollection<string> Permissoes);
+public sealed record AtualizarPerfilAcessoRequest(string Nome, IReadOnlyCollection<string> Permissoes);
 public sealed record BloquearUsuarioRequest(string Motivo);
 public sealed record ConcederPermissaoRequest(string Permissao);
+public sealed record VincularPerfilAcessoRequest(Guid PerfilAcessoId);
 public sealed record DefinirSenhaUsuarioRequest(string Senha, bool AtivarUsuario = true);
 public sealed record LoginRequest(Guid EmpresaId, string Email, string Senha);
-public sealed record LogoutRequest(string Token);
+public sealed record TokenRequest(Guid EmpresaId, string Email, string Senha);
+public sealed record RefreshTokenRequest(string RefreshToken);
+public sealed record LogoutRequest(string? Token);
 public sealed record ConsultarSessaoRequest(string Token);
 public sealed record ConsultarUsuariosRequest(Guid? EmpresaId, string? Status, string? Termo, int Page = 1, int PageSize = 20);
+public sealed record ConsultarPerfisAcessoRequest(Guid? EmpresaId, string? Termo, int Page = 1, int PageSize = 20);
 public sealed record PermissaoResponse(string Codigo);
-public sealed record UsuarioResponse(Guid Id, Guid EmpresaId, string Email, string Nome, string Status, DateTimeOffset? UltimoBloqueioEm, bool PossuiSenhaConfigurada, IReadOnlyCollection<string> Permissoes);
+public sealed record PerfilAcessoPadraoResponse(string Nome, IReadOnlyCollection<string> Permissoes);
+public sealed record PerfilAcessoResponse(Guid Id, Guid EmpresaId, string Nome, IReadOnlyCollection<string> Permissoes);
+public sealed record UsuarioResponse(Guid Id, Guid EmpresaId, string Email, string Nome, string Status, DateTimeOffset? UltimoBloqueioEm, bool PossuiSenhaConfigurada, IReadOnlyCollection<string> Permissoes, IReadOnlyCollection<Guid> PerfisAcesso);
 public sealed record SessaoAutenticacaoResponse(string Token, DateTimeOffset ExpiresAt, UsuarioResponse Usuario);
+public sealed record TokenResponse(string AccessToken, string RefreshToken, string TokenType, DateTimeOffset ExpiresAt, SessaoAutenticacaoResponse Sessao);

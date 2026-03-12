@@ -25,3 +25,10 @@ public sealed record SessaoAutenticacaoRegistro(
     string Email,
     DateTimeOffset CriadaEm,
     DateTimeOffset ExpiraEm);
+
+public sealed record RefreshTokenRegistro(
+    string Token,
+    string SessionToken,
+    Guid UsuarioId,
+    DateTimeOffset CriadoEm,
+    DateTimeOffset ExpiraEm);

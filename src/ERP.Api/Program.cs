@@ -2,8 +2,12 @@ using ERP.Api.Application;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Health;
 using ERP.Api.Application.Storage;
+using ERP.Api.Application.Security;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.IdentityModel.Tokens;
 using System.Text.Json.Serialization;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
@@ -24,6 +28,15 @@ builder.Services.AddSwaggerGen(options =>
         In = Microsoft.OpenApi.Models.ParameterLocation.Header,
         Description = "Token de sessao retornado pelo endpoint de login."
     });
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "JWT retornado pelo endpoint de token."
+    });
 
     options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
     {
@@ -34,6 +47,17 @@ builder.Services.AddSwaggerGen(options =>
                 {
                     Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
                     Id = "SessionToken"
+                }
+            },
+            Array.Empty<string>()
+        },
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
                 }
             },
             Array.Empty<string>()
@@ -50,6 +74,25 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
+builder.Services.AddAuthorization();
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
 builder.Services.AddHealthChecks().AddCheck<StorageHealthCheck>("storage");
 builder.Services.AddSingleton<IErpStore>(serviceProvider =>
@@ -63,6 +106,7 @@ builder.Services.AddSingleton<IErpStore>(serviceProvider =>
     };
 });
 builder.Services.AddSingleton<ErpApplicationService>();
+builder.Services.AddSingleton<JwtTokenService>();
 
 var app = builder.Build();
 
@@ -74,6 +118,8 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/swagger/v1/swagger.json", "Codex ERP API v1");
     options.RoutePrefix = "swagger";
 });
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseHttpsRedirection();
 
 app.MapGet("/", () => Results.Ok(ApiResponses.Ok(new
@@ -131,7 +177,7 @@ app.MapGet("/modules", () => Results.Ok(ApiResponses.Ok(new[]
     new { Name = "Estoque", Capability = "Ajustes, reservas, baixas e transferencias" },
     new { Name = "Vendas", Capability = "Aprovacao e reserva de pedidos" },
     new { Name = "Fiscal", Capability = "Autorizacao, rejeicao e cancelamento de notas" },
-    new { Name = "Identity", Capability = "Cadastro de usuarios, ativacao e permissoes" },
+    new { Name = "Identity", Capability = "Cadastro de usuarios, perfis de acesso, ativacao e permissoes" },
     new { Name = "Integracoes", Capability = "Processamento idempotente de webhooks" }
 })));
 

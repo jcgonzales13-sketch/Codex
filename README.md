@@ -17,7 +17,7 @@ Modulos atuais:
 - Estoque: ajustes, reservas, baixas por faturamento e transferencias.
 - Vendas: aprovacao e reserva de pedidos.
 - Fiscal: autorizacao, rejeicao e cancelamento de notas fiscais com repeticao segura de operacoes criticas.
-- Identity: cadastro de usuarios, senha, login, sessao, bloqueio e permissoes.
+- Identity: cadastro de usuarios, perfis de acesso, senha, login, sessao, bloqueio e permissoes.
 - Integracoes: processamento idempotente de webhooks.
 
 ## Estrutura
@@ -97,7 +97,11 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /depositos`
 - `GET /identity/usuarios`
 - `GET /identity/permissoes`
+- `GET /identity/perfis/padroes`
+- `GET /identity/perfis`
 - `POST /identity/auth/login`
+- `POST /identity/oauth/token`
+- `POST /identity/oauth/refresh`
 - `GET /compras/importacoes-nota-entrada`
 - `GET /vendas/pedidos`
 - `GET /fiscal/notas`
@@ -121,7 +125,8 @@ Observacao: no ambiente onde este repositorio foi preparado, o SDK .NET 9 pode f
 
 ## Autenticacao Basica
 
-A API agora suporta sessao simples por token via modulo `Identity`.
+ A API agora suporta sessao simples por token via modulo `Identity`.
+Tambem suporta emissao de JWT bearer via endpoint de token.
 
 Fluxo minimo:
 
@@ -129,6 +134,12 @@ Fluxo minimo:
 2. Definir senha com `POST /identity/usuarios/{usuarioId}/senha`.
 3. Fazer login em `POST /identity/auth/login`.
 4. Enviar o token retornado no header `X-Session-Token` nas operacoes mutaveis protegidas.
+
+Opcionalmente:
+
+5. Solicitar um JWT em `POST /identity/oauth/token`.
+6. Enviar `Authorization: Bearer {token}` nas operacoes mutaveis protegidas.
+7. Quando o access token expirar, renovar em `POST /identity/oauth/refresh`.
 
 Permissoes operacionais atuais:
 
@@ -217,9 +228,25 @@ Retorna usuarios com filtros opcionais por empresa, status, termo e paginacao.
 
 Retorna o catalogo de permissoes reconhecidas pela API para concessao e validacao de acesso.
 
+`GET /identity/perfis/padroes`
+
+Retorna o catalogo de perfis padrao disponibilizados pela aplicacao para novas empresas.
+
+`GET /identity/perfis`
+
+Retorna perfis de acesso por empresa, com filtros por termo e paginacao.
+
 `POST /identity/auth/login`
 
 Realiza autenticacao por empresa, email e senha, retornando token de sessao.
+
+`POST /identity/oauth/token`
+
+Emite um JWT bearer assinado a partir das credenciais do usuario.
+
+`POST /identity/oauth/refresh`
+
+Renova a sessao JWT a partir de um refresh token valido.
 
 `GET /compras/importacoes-nota-entrada`
 
@@ -246,7 +273,11 @@ Exemplos de consulta:
 - `GET /depositos?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=DEP`
 - `GET /identity/usuarios?status=Ativo&page=1&pageSize=20&termo=usuario`
 - `GET /identity/permissoes`
+- `GET /identity/perfis/padroes`
+- `GET /identity/perfis?empresaId={empresaId}&page=1&pageSize=20&termo=estoque`
 - `POST /identity/auth/login`
+- `POST /identity/oauth/token`
+- `POST /identity/oauth/refresh`
 - `GET /compras/importacoes-nota-entrada?empresaId={empresaId}&fornecedorId={fornecedorId}&depositoId={depositoId}&importadaComSucesso=true&page=1&pageSize=20`
 - `GET /estoque/saldos?produtoId={produtoId}&depositoId={depositoId}&page=1&pageSize=20`
 - `GET /estoque/movimentos?produtoId={produtoId}&depositoId={depositoId}&page=1&pageSize=20`
