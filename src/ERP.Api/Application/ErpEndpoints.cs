@@ -1,5 +1,6 @@
 using ERP.BuildingBlocks;
 using ERP.Api.Application.Contracts;
+using ERP.Api.Application.Security;
 
 namespace ERP.Api.Application;
 
@@ -14,28 +15,28 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarEmpresas(new ConsultarEmpresasRequest(status, termo, page ?? 1, pageSize ?? 20)))));
         empresas.MapPost(string.Empty, (HttpContext httpContext, CreateEmpresaRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "EMPRESAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
             var response = service.CadastrarEmpresa(request);
             return Results.Created($"/empresas/{response.Id}", ApiResponses.Ok(response));
         });
         empresas.MapPost("/{empresaId:guid}/atualizar", (HttpContext httpContext, Guid empresaId, AtualizarEmpresaRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "EMPRESAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
             return Results.Ok(ApiResponses.Ok(service.AtualizarEmpresa(empresaId, request)));
         });
         empresas.MapPost("/{empresaId:guid}/ativar", (HttpContext httpContext, Guid empresaId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "EMPRESAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
             return Results.Ok(ApiResponses.Ok(service.AtivarEmpresa(empresaId)));
         });
         empresas.MapPost("/{empresaId:guid}/inativar", (HttpContext httpContext, Guid empresaId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "EMPRESAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
             return Results.Ok(ApiResponses.Ok(service.InativarEmpresa(empresaId)));
         });
         empresas.MapPost("/{empresaId:guid}/bloquear", (HttpContext httpContext, Guid empresaId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "EMPRESAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
             return Results.Ok(ApiResponses.Ok(service.BloquearEmpresa(empresaId)));
         });
 
@@ -44,23 +45,23 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarProdutos(new ConsultarProdutosRequest(empresaId, ativo, termo, page ?? 1, pageSize ?? 20)))));
         catalogo.MapPost("/produtos", (HttpContext httpContext, CreateProdutoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CATALOGO_MANAGE", request.EmpresaId);
+            RequirePermission(httpContext, service, IdentityPermissions.CatalogoManage, request.EmpresaId);
             var response = service.CadastrarProduto(request);
             return Results.Created($"/catalogo/produtos/{response.Id}", ApiResponses.Ok(response));
         });
         catalogo.MapPost("/produtos/{produtoId:guid}/inativar", (HttpContext httpContext, Guid produtoId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CATALOGO_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.CatalogoManage, service.ObterEmpresaIdDoProduto(produtoId));
             return Results.Ok(ApiResponses.Ok(service.InativarProduto(produtoId)));
         });
         catalogo.MapPost("/produtos/{produtoId:guid}/variacoes", (HttpContext httpContext, Guid produtoId, AddVariacaoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CATALOGO_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.CatalogoManage, service.ObterEmpresaIdDoProduto(produtoId));
             return Results.Ok(ApiResponses.Ok(service.AdicionarVariacao(produtoId, request)));
         });
         catalogo.MapPost("/produtos/{produtoId:guid}/dados-fiscais", (HttpContext httpContext, Guid produtoId, UpdateFiscalProdutoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CATALOGO_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.CatalogoManage, service.ObterEmpresaIdDoProduto(produtoId));
             return Results.Ok(ApiResponses.Ok(service.AtualizarFiscalProduto(produtoId, request)));
         });
 
@@ -69,28 +70,28 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarClientes(new ConsultarClientesRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))));
         clientes.MapPost(string.Empty, (HttpContext httpContext, CreateClienteRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CLIENTES_MANAGE", request.EmpresaId);
+            RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, request.EmpresaId);
             var response = service.CadastrarCliente(request);
             return Results.Created($"/clientes/{response.Id}", ApiResponses.Ok(response));
         });
         clientes.MapPost("/{clienteId:guid}/atualizar", (HttpContext httpContext, Guid clienteId, AtualizarClienteRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CLIENTES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, service.ObterEmpresaIdDoCliente(clienteId));
             return Results.Ok(ApiResponses.Ok(service.AtualizarCliente(clienteId, request)));
         });
         clientes.MapPost("/{clienteId:guid}/ativar", (HttpContext httpContext, Guid clienteId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CLIENTES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, service.ObterEmpresaIdDoCliente(clienteId));
             return Results.Ok(ApiResponses.Ok(service.AtivarCliente(clienteId)));
         });
         clientes.MapPost("/{clienteId:guid}/inativar", (HttpContext httpContext, Guid clienteId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CLIENTES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, service.ObterEmpresaIdDoCliente(clienteId));
             return Results.Ok(ApiResponses.Ok(service.InativarCliente(clienteId)));
         });
         clientes.MapPost("/{clienteId:guid}/bloquear", (HttpContext httpContext, Guid clienteId, BloquearClienteRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "CLIENTES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, service.ObterEmpresaIdDoCliente(clienteId));
             return Results.Ok(ApiResponses.Ok(service.BloquearCliente(clienteId, request)));
         });
 
@@ -99,28 +100,28 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarFornecedores(new ConsultarFornecedoresRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))));
         fornecedores.MapPost(string.Empty, (HttpContext httpContext, CreateFornecedorRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FORNECEDORES_MANAGE", request.EmpresaId);
+            RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, request.EmpresaId);
             var response = service.CadastrarFornecedor(request);
             return Results.Created($"/fornecedores/{response.Id}", ApiResponses.Ok(response));
         });
         fornecedores.MapPost("/{fornecedorId:guid}/atualizar", (HttpContext httpContext, Guid fornecedorId, AtualizarFornecedorRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FORNECEDORES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, service.ObterEmpresaIdDoFornecedor(fornecedorId));
             return Results.Ok(ApiResponses.Ok(service.AtualizarFornecedor(fornecedorId, request)));
         });
         fornecedores.MapPost("/{fornecedorId:guid}/ativar", (HttpContext httpContext, Guid fornecedorId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FORNECEDORES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, service.ObterEmpresaIdDoFornecedor(fornecedorId));
             return Results.Ok(ApiResponses.Ok(service.AtivarFornecedor(fornecedorId)));
         });
         fornecedores.MapPost("/{fornecedorId:guid}/inativar", (HttpContext httpContext, Guid fornecedorId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FORNECEDORES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, service.ObterEmpresaIdDoFornecedor(fornecedorId));
             return Results.Ok(ApiResponses.Ok(service.InativarFornecedor(fornecedorId)));
         });
         fornecedores.MapPost("/{fornecedorId:guid}/bloquear", (HttpContext httpContext, Guid fornecedorId, BloquearFornecedorRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FORNECEDORES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, service.ObterEmpresaIdDoFornecedor(fornecedorId));
             return Results.Ok(ApiResponses.Ok(service.BloquearFornecedor(fornecedorId, request)));
         });
 
@@ -129,56 +130,58 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarDepositos(new ConsultarDepositosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))));
         depositos.MapPost(string.Empty, (HttpContext httpContext, CreateDepositoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "DEPOSITOS_MANAGE", request.EmpresaId);
+            RequirePermission(httpContext, service, IdentityPermissions.DepositosManage, request.EmpresaId);
             var response = service.CadastrarDeposito(request);
             return Results.Created($"/depositos/{response.Id}", ApiResponses.Ok(response));
         });
         depositos.MapPost("/{depositoId:guid}/atualizar", (HttpContext httpContext, Guid depositoId, AtualizarDepositoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "DEPOSITOS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.DepositosManage, service.ObterEmpresaIdDoDeposito(depositoId));
             return Results.Ok(ApiResponses.Ok(service.AtualizarDeposito(depositoId, request)));
         });
         depositos.MapPost("/{depositoId:guid}/ativar", (HttpContext httpContext, Guid depositoId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "DEPOSITOS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.DepositosManage, service.ObterEmpresaIdDoDeposito(depositoId));
             return Results.Ok(ApiResponses.Ok(service.AtivarDeposito(depositoId)));
         });
         depositos.MapPost("/{depositoId:guid}/inativar", (HttpContext httpContext, Guid depositoId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "DEPOSITOS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.DepositosManage, service.ObterEmpresaIdDoDeposito(depositoId));
             return Results.Ok(ApiResponses.Ok(service.InativarDeposito(depositoId)));
         });
 
         var identity = app.MapGroup("/identity").WithTags("Identity");
+        identity.MapGet("/permissoes", (ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ListarPermissoes())));
         identity.MapGet("/usuarios", (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
             Results.Ok(ApiResponses.Ok(service.ConsultarUsuarios(new ConsultarUsuariosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))));
         identity.MapPost("/usuarios", (HttpContext httpContext, CreateUsuarioRequest request, ErpApplicationService service) =>
         {
             if (!service.PermiteBootstrapIdentity(request.EmpresaId))
             {
-                RequirePermission(httpContext, service, "IDENTITY_MANAGE", request.EmpresaId);
+                RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, request.EmpresaId);
             }
             var response = service.CadastrarUsuario(request);
             return Results.Created($"/identity/usuarios/{response.Id}", ApiResponses.Ok(response));
         });
         identity.MapPost("/usuarios/{usuarioId:guid}/senha", (HttpContext httpContext, Guid usuarioId, DefinirSenhaUsuarioRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "IDENTITY_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoUsuario(usuarioId));
             return Results.Ok(ApiResponses.Ok(service.DefinirSenhaUsuario(usuarioId, request)));
         });
         identity.MapPost("/usuarios/{usuarioId:guid}/ativar", (HttpContext httpContext, Guid usuarioId, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "IDENTITY_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoUsuario(usuarioId));
             return Results.Ok(ApiResponses.Ok(service.AtivarUsuario(usuarioId)));
         });
         identity.MapPost("/usuarios/{usuarioId:guid}/bloquear", (HttpContext httpContext, Guid usuarioId, BloquearUsuarioRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "IDENTITY_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoUsuario(usuarioId));
             return Results.Ok(ApiResponses.Ok(service.BloquearUsuario(usuarioId, request)));
         });
         identity.MapPost("/usuarios/{usuarioId:guid}/permissoes", (HttpContext httpContext, Guid usuarioId, ConcederPermissaoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "IDENTITY_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoUsuario(usuarioId));
             return Results.Ok(ApiResponses.Ok(service.ConcederPermissao(usuarioId, request)));
         });
         identity.MapPost("/auth/login", (LoginRequest request, ErpApplicationService service) => Results.Ok(ApiResponses.Ok(service.Login(request))));
@@ -196,27 +199,27 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarMovimentosEstoque(new ConsultarMovimentosEstoqueRequest(produtoId, depositoId, page ?? 1, pageSize ?? 20)))));
         estoque.MapPost("/saldos", (HttpContext httpContext, CriarSaldoEstoqueRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "ESTOQUE_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EstoqueManage, service.ObterEmpresaIdDoDeposito(request.DepositoId));
             return Results.Created($"/estoque/saldos/{request.ProdutoId}/{request.DepositoId}", ApiResponses.Ok(service.CriarSaldo(request)));
         });
         estoque.MapPost("/saldos/ajustes", (HttpContext httpContext, AjustarSaldoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "ESTOQUE_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EstoqueManage, service.ObterEmpresaIdDoDeposito(request.DepositoId));
             return Results.Ok(ApiResponses.Ok(service.AjustarSaldo(request)));
         });
         estoque.MapPost("/saldos/reservas", (HttpContext httpContext, ReservarSaldoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "ESTOQUE_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EstoqueManage, service.ObterEmpresaIdDoDeposito(request.DepositoId));
             return Results.Ok(ApiResponses.Ok(service.ReservarSaldo(request)));
         });
         estoque.MapPost("/saldos/baixas", (HttpContext httpContext, ConfirmarBaixaRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "ESTOQUE_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EstoqueManage, service.ObterEmpresaIdDoDeposito(request.DepositoId));
             return Results.Ok(ApiResponses.Ok(service.ConfirmarBaixaFaturamento(request)));
         });
         estoque.MapPost("/transferencias", (HttpContext httpContext, TransferirEstoqueRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "ESTOQUE_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.EstoqueManage, service.ObterEmpresaIdDoDeposito(request.DepositoOrigemId));
             return Results.Ok(ApiResponses.Ok(service.Transferir(request)));
         });
 
@@ -225,28 +228,28 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarPedidos(new ConsultarPedidosVendaRequest(status, clienteId, page ?? 1, pageSize ?? 20)))));
         vendas.MapPost("/pedidos", (HttpContext httpContext, CreatePedidoVendaRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "VENDAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.VendasManage, service.ObterEmpresaIdDoCliente(request.ClienteId));
             var response = service.CriarPedido(request);
             return Results.Created($"/vendas/pedidos/{response.Id}", ApiResponses.Ok(response));
         });
         vendas.MapPost("/pedidos/{pedidoId:guid}/itens", (HttpContext httpContext, Guid pedidoId, AddItemPedidoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "VENDAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.VendasManage, service.ObterEmpresaIdDoPedido(pedidoId));
             return Results.Ok(ApiResponses.Ok(service.AdicionarItemPedido(pedidoId, request)));
         });
         vendas.MapPost("/pedidos/{pedidoId:guid}/aprovar", (HttpContext httpContext, Guid pedidoId, AprovarPedidoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "VENDAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.VendasManage, service.ObterEmpresaIdDoPedido(pedidoId));
             return Results.Ok(ApiResponses.Ok(service.AprovarPedido(pedidoId, request)));
         });
         vendas.MapPost("/pedidos/{pedidoId:guid}/reservar", (HttpContext httpContext, Guid pedidoId, ReservarPedidoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "VENDAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.VendasManage, service.ObterEmpresaIdDoPedido(pedidoId));
             return Results.Ok(ApiResponses.Ok(service.ReservarPedido(pedidoId, request)));
         });
         vendas.MapPost("/pedidos/{pedidoId:guid}/cancelar", (HttpContext httpContext, Guid pedidoId, CancelarPedidoRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "VENDAS_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.VendasManage, service.ObterEmpresaIdDoPedido(pedidoId));
             return Results.Ok(ApiResponses.Ok(service.CancelarPedido(pedidoId, request)));
         });
 
@@ -255,7 +258,7 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresaId, fornecedorId, depositoId, importadaComSucesso, chaveAcesso, page ?? 1, pageSize ?? 20)))));
         compras.MapPost("/importacoes-nota-entrada", (HttpContext httpContext, ImportarNotaEntradaRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "COMPRAS_MANAGE", request.EmpresaId);
+            RequirePermission(httpContext, service, IdentityPermissions.ComprasManage, request.EmpresaId);
             return Results.Ok(ApiResponses.Ok(service.ImportarNotaEntrada(request)));
         });
 
@@ -264,23 +267,23 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarNotasFiscais(new ConsultarNotasFiscaisRequest(status, clienteId, page ?? 1, pageSize ?? 20)))));
         fiscal.MapPost("/notas", (HttpContext httpContext, CreateNotaFiscalRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FISCAL_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.FiscalManage, service.ObterEmpresaIdDoCliente(request.ClienteId));
             var response = service.CriarNotaFiscal(request);
             return Results.Created($"/fiscal/notas/{response.Id}", ApiResponses.Ok(response));
         });
         fiscal.MapPost("/notas/{notaFiscalId:guid}/autorizar", (HttpContext httpContext, Guid notaFiscalId, AutorizarNotaFiscalRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FISCAL_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.FiscalManage, service.ObterEmpresaIdDaNotaFiscal(notaFiscalId));
             return Results.Ok(ApiResponses.Ok(service.AutorizarNotaFiscal(notaFiscalId, request)));
         });
         fiscal.MapPost("/notas/{notaFiscalId:guid}/rejeitar", (HttpContext httpContext, Guid notaFiscalId, RegistrarRejeicaoNotaFiscalRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FISCAL_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.FiscalManage, service.ObterEmpresaIdDaNotaFiscal(notaFiscalId));
             return Results.Ok(ApiResponses.Ok(service.RegistrarRejeicaoNotaFiscal(notaFiscalId, request)));
         });
         fiscal.MapPost("/notas/{notaFiscalId:guid}/cancelar", (HttpContext httpContext, Guid notaFiscalId, CancelarNotaFiscalRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "FISCAL_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.FiscalManage, service.ObterEmpresaIdDaNotaFiscal(notaFiscalId));
             return Results.Ok(ApiResponses.Ok(service.CancelarNotaFiscal(notaFiscalId, request)));
         });
 
@@ -289,7 +292,7 @@ public static class ErpEndpoints
             Results.Ok(ApiResponses.Ok(service.ConsultarWebhooks(new ConsultarWebhooksRequest(origem, status, eventoId, page ?? 1, pageSize ?? 20)))));
         integracoes.MapPost("/webhooks", (HttpContext httpContext, ProcessarWebhookRequest request, ErpApplicationService service) =>
         {
-            RequirePermission(httpContext, service, "INTEGRACOES_MANAGE");
+            RequirePermission(httpContext, service, IdentityPermissions.IntegracoesManage);
             return Results.Ok(ApiResponses.Ok(service.ProcessarWebhook(request)));
         });
 

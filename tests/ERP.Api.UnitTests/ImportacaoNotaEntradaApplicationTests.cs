@@ -1,5 +1,6 @@
 using ERP.Api.Application;
 using ERP.Api.Application.Contracts;
+using ERP.Api.Application.Security;
 using ERP.Api.Application.Storage;
 using ERP.BuildingBlocks;
 using ERP.Modules.Catalogo;
@@ -420,7 +421,7 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
         var sessao = service.Login(new LoginRequest(empresa.Id, "permissao@empresa.com", "Senha@123"));
 
-        var exception = Assert.Throws<ForbiddenException>(() => service.ValidarAcesso(sessao.Token, "ESTOQUE_MANAGE", empresa.Id));
+        var exception = Assert.Throws<ForbiddenException>(() => service.ValidarAcesso(sessao.Token, IdentityPermissions.EstoqueManage, empresa.Id));
 
         Assert.Equal("Usuario autenticado nao possui permissao para esta operacao.", exception.Message);
     }
@@ -434,12 +435,56 @@ public sealed class ImportacaoNotaEntradaApplicationTests
         var outraEmpresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000136", "Empresa Outra Sessao", "Empresa Outra Sessao LTDA"));
         var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "sessao@empresa.com", "Usuario Sessao"));
         service.DefinirSenhaUsuario(usuario.Id, new DefinirSenhaUsuarioRequest("Senha@123", true));
-        service.ConcederPermissao(usuario.Id, new ConcederPermissaoRequest("ESTOQUE_MANAGE"));
+        service.ConcederPermissao(usuario.Id, new ConcederPermissaoRequest(IdentityPermissions.EstoqueManage));
         var sessao = service.Login(new LoginRequest(empresa.Id, "sessao@empresa.com", "Senha@123"));
 
-        var exception = Assert.Throws<ForbiddenException>(() => service.ValidarAcesso(sessao.Token, "ESTOQUE_MANAGE", outraEmpresa.Id));
+        var exception = Assert.Throws<ForbiddenException>(() => service.ValidarAcesso(sessao.Token, IdentityPermissions.EstoqueManage, outraEmpresa.Id));
 
         Assert.Equal("Sessao autenticada nao pertence a empresa informada.", exception.Message);
+    }
+
+    [Fact]
+    public void Deve_listar_catalogo_de_permissoes_suportadas()
+    {
+        var service = new ErpApplicationService(new InMemoryErpStore());
+
+        var permissoes = service.ListarPermissoes();
+
+        Assert.Contains(permissoes, item => item.Codigo == IdentityPermissions.Admin);
+        Assert.Contains(permissoes, item => item.Codigo == IdentityPermissions.IdentityManage);
+        Assert.Contains(permissoes, item => item.Codigo == IdentityPermissions.FiscalManage);
+    }
+
+    [Fact]
+    public void Nao_deve_conceder_permissao_desconhecida()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000138", "Empresa Permissao Invalida", "Empresa Permissao Invalida LTDA"));
+        var usuario = service.CadastrarUsuario(new CreateUsuarioRequest(empresa.Id, "invalida@empresa.com", "Usuario Invalido"));
+
+        var exception = Assert.Throws<DomainException>(() => service.ConcederPermissao(usuario.Id, new ConcederPermissaoRequest("PERMISSAO_QUE_NAO_EXISTE")));
+
+        Assert.Equal("Permissao informada nao e suportada.", exception.Message);
+    }
+
+    [Fact]
+    public void Deve_obter_empresa_do_pedido_e_da_nota_fiscal()
+    {
+        var store = new InMemoryErpStore();
+        var service = new ErpApplicationService(store);
+        var empresa = service.CadastrarEmpresa(new CreateEmpresaRequest("12345678000137", "Empresa Recurso", "Empresa Recurso LTDA"));
+        var cliente = service.CadastrarCliente(new CreateClienteRequest(empresa.Id, "10000000015", "Cliente Recurso", "recurso@empresa.com"));
+        var produto = service.CadastrarProduto(new CreateProdutoRequest(empresa.Id, "P700", "SKU-700", "Produto Recurso", TipoProduto.Simples, 10m, 5m, "12345678", "0"));
+        var pedido = service.CriarPedido(new CreatePedidoVendaRequest(cliente.Id));
+        service.AdicionarItemPedido(pedido.Id, new AddItemPedidoRequest(produto.Id, 1m, 10m));
+        var nota = service.CriarNotaFiscal(new CreateNotaFiscalRequest(
+            pedido.Id,
+            cliente.Id,
+            [new ItemNotaFiscalRequest(produto.Id, 1m, "12345678", "5102")]));
+
+        Assert.Equal(empresa.Id, service.ObterEmpresaIdDoPedido(pedido.Id));
+        Assert.Equal(empresa.Id, service.ObterEmpresaIdDaNotaFiscal(nota.Id));
     }
 
     [Fact]

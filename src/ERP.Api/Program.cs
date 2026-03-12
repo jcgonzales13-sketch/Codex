@@ -7,6 +7,39 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "Codex ERP API",
+        Version = "v1",
+        Description = "API modular de ERP com fluxos de empresas, catalogo, compras, estoque, vendas, fiscal, identity e integracoes."
+    });
+
+    options.AddSecurityDefinition("SessionToken", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "X-Session-Token",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Token de sessao retornado pelo endpoint de login."
+    });
+
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "SessionToken"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -35,6 +68,12 @@ var app = builder.Build();
 
 app.UseErpExceptionHandling();
 app.UseForwardedHeaders();
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Codex ERP API v1");
+    options.RoutePrefix = "swagger";
+});
 app.UseHttpsRedirection();
 
 app.MapGet("/", () => Results.Ok(ApiResponses.Ok(new
@@ -52,6 +91,12 @@ app.MapGet("/health", () => Results.Ok(ApiResponses.Ok(new
 })));
 
 app.MapGet("/healthz", () => Results.Ok(ApiResponses.Ok(new
+{
+    status = "healthy",
+    checkedAt = DateTimeOffset.UtcNow
+})));
+
+app.MapPost("/healthz", () => Results.Ok(ApiResponses.Ok(new
 {
     status = "healthy",
     checkedAt = DateTimeOffset.UtcNow

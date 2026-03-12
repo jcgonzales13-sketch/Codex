@@ -32,6 +32,11 @@ Accept: application/json
 
 ###
 
+POST {{ERP.Api_HostAddress}}/healthz
+Accept: application/json
+
+###
+
 GET {{ERP.Api_HostAddress}}/health/ready
 Accept: application/json
 
@@ -140,6 +145,11 @@ Accept: application/json
 ###
 
 GET {{ERP.Api_HostAddress}}/identity/usuarios?status=Ativo&page=1&pageSize=20&termo=usuario
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/identity/permissoes
 Accept: application/json
 
 ###

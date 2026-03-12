@@ -83,7 +83,9 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /`
 - `GET /health`
 - `GET /healthz`
+- `POST /healthz`
 - `GET /health/ready`
+- `GET /swagger`
 - `GET /modules`
 - `GET /system/storage`
 - `GET /system/events`
@@ -94,6 +96,7 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /clientes`
 - `GET /depositos`
 - `GET /identity/usuarios`
+- `GET /identity/permissoes`
 - `POST /identity/auth/login`
 - `GET /compras/importacoes-nota-entrada`
 - `GET /vendas/pedidos`
@@ -142,6 +145,8 @@ Permissoes operacionais atuais:
 - `FISCAL_MANAGE`
 - `INTEGRACOES_MANAGE`
 
+Esse catalogo tambem pode ser consultado via `GET /identity/permissoes`.
+
 ## Endpoints da API
 
 `GET /`
@@ -156,9 +161,17 @@ Retorna status de saude simples com timestamp UTC.
 
 Alias simples de health check para deploy e monitoramento externo.
 
+`POST /healthz`
+
+Alias em `POST` para teste manual em ferramentas como Postman.
+
 `GET /health/ready`
 
 Executa o health check do provider de storage ativo.
+
+`GET /swagger`
+
+Abre a interface Swagger UI da API.
 
 `GET /modules`
 
@@ -200,6 +213,10 @@ Retorna depositos com filtros opcionais por empresa, status, termo e paginacao.
 
 Retorna usuarios com filtros opcionais por empresa, status, termo e paginacao.
 
+`GET /identity/permissoes`
+
+Retorna o catalogo de permissoes reconhecidas pela API para concessao e validacao de acesso.
+
 `POST /identity/auth/login`
 
 Realiza autenticacao por empresa, email e senha, retornando token de sessao.
@@ -228,6 +245,7 @@ Exemplos de consulta:
 - `GET /clientes?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=Cliente`
 - `GET /depositos?empresaId={empresaId}&status=Ativo&page=1&pageSize=20&termo=DEP`
 - `GET /identity/usuarios?status=Ativo&page=1&pageSize=20&termo=usuario`
+- `GET /identity/permissoes`
 - `POST /identity/auth/login`
 - `GET /compras/importacoes-nota-entrada?empresaId={empresaId}&fornecedorId={fornecedorId}&depositoId={depositoId}&importadaComSucesso=true&page=1&pageSize=20`
 - `GET /estoque/saldos?produtoId={produtoId}&depositoId={depositoId}&page=1&pageSize=20`

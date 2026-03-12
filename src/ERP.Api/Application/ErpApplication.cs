@@ -1,6 +1,7 @@
 using ERP.BuildingBlocks;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Integration;
+using ERP.Api.Application.Security;
 using ERP.Api.Application.Storage;
 using ERP.Api.Application.Validation;
 using ERP.Modules.Catalogo;
@@ -502,6 +503,13 @@ public sealed class ErpApplicationService(IErpStore store)
         }
     }
 
+    public IReadOnlyCollection<PermissaoResponse> ListarPermissoes()
+    {
+        return IdentityPermissions.All
+            .Select(item => new PermissaoResponse(item))
+            .ToArray();
+    }
+
     public UsuarioResponse CadastrarUsuario(CreateUsuarioRequest request)
     {
         lock (store.SyncRoot)
@@ -525,6 +533,64 @@ public sealed class ErpApplicationService(IErpStore store)
         {
             ApplicationGuard.AgainstEmptyGuid(empresaId, "EmpresaId");
             return !store.Usuarios.Values.Any(item => item.EmpresaId == empresaId);
+        }
+    }
+
+    public Guid ObterEmpresaIdDoProduto(Guid produtoId)
+    {
+        lock (store.SyncRoot)
+        {
+            return GetProduto(produtoId).EmpresaId;
+        }
+    }
+
+    public Guid ObterEmpresaIdDoCliente(Guid clienteId)
+    {
+        lock (store.SyncRoot)
+        {
+            return GetCliente(clienteId).EmpresaId;
+        }
+    }
+
+    public Guid ObterEmpresaIdDoFornecedor(Guid fornecedorId)
+    {
+        lock (store.SyncRoot)
+        {
+            return GetFornecedor(fornecedorId).EmpresaId;
+        }
+    }
+
+    public Guid ObterEmpresaIdDoDeposito(Guid depositoId)
+    {
+        lock (store.SyncRoot)
+        {
+            return GetDeposito(depositoId).EmpresaId;
+        }
+    }
+
+    public Guid ObterEmpresaIdDoUsuario(Guid usuarioId)
+    {
+        lock (store.SyncRoot)
+        {
+            return GetUsuario(usuarioId).EmpresaId;
+        }
+    }
+
+    public Guid ObterEmpresaIdDoPedido(Guid pedidoId)
+    {
+        lock (store.SyncRoot)
+        {
+            var pedido = GetPedido(pedidoId);
+            return GetCliente(pedido.ClienteId).EmpresaId;
+        }
+    }
+
+    public Guid ObterEmpresaIdDaNotaFiscal(Guid notaFiscalId)
+    {
+        lock (store.SyncRoot)
+        {
+            var nota = GetNotaFiscal(notaFiscalId);
+            return GetCliente(nota.ClienteId).EmpresaId;
         }
     }
 
@@ -639,8 +705,13 @@ public sealed class ErpApplicationService(IErpStore store)
                 throw new ForbiddenException("Sessao autenticada nao pertence a empresa informada.");
             }
 
-            var permissaoNormalizada = permissao.Trim().ToUpperInvariant();
-            var possuiAcesso = usuario.Permissoes.Contains("ADMIN") || usuario.Permissoes.Contains(permissaoNormalizada);
+            var permissaoNormalizada = IdentityPermissions.Normalize(permissao);
+            if (!IdentityPermissions.IsKnown(permissaoNormalizada))
+            {
+                throw new DomainException("Permissao informada nao e suportada.");
+            }
+
+            var possuiAcesso = usuario.Permissoes.Contains(IdentityPermissions.Admin) || usuario.Permissoes.Contains(permissaoNormalizada);
             if (!possuiAcesso)
             {
                 throw new ForbiddenException("Usuario autenticado nao possui permissao para esta operacao.");
@@ -655,8 +726,14 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Permissao, "Permissao");
+            var permissaoNormalizada = IdentityPermissions.Normalize(request.Permissao);
+            if (!IdentityPermissions.IsKnown(permissaoNormalizada))
+            {
+                throw new DomainException("Permissao informada nao e suportada.");
+            }
+
             var usuario = GetUsuario(usuarioId);
-            usuario.ConcederPermissao(request.Permissao);
+            usuario.ConcederPermissao(permissaoNormalizada);
             store.Persist();
             return MapUsuario(usuario);
         }
