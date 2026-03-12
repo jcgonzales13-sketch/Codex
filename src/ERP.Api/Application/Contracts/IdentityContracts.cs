@@ -3,6 +3,7 @@ namespace ERP.Api.Application.Contracts;
 public sealed record CreateUsuarioRequest(Guid EmpresaId, string Email, string Nome);
 public sealed record CreatePerfilAcessoRequest(Guid EmpresaId, string Nome, IReadOnlyCollection<string> Permissoes);
 public sealed record AtualizarPerfilAcessoRequest(string Nome, IReadOnlyCollection<string> Permissoes);
+public sealed record AtualizarPerfilAcessoParcialRequest(string? Nome, IReadOnlyCollection<string>? Permissoes);
 public sealed record BloquearUsuarioRequest(string Motivo);
 public sealed record ConcederPermissaoRequest(string Permissao);
 public sealed record VincularPerfilAcessoRequest(Guid PerfilAcessoId);

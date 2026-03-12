@@ -2,6 +2,16 @@
 
 Projeto de ERP modular em .NET 9 com foco em regras de dominio por modulo e cobertura com testes unitarios.
 
+O storage atual ja foi separado internamente por secoes de modulo, mantendo compatibilidade com snapshots legados enquanto prepara a migracao para persistencia definitiva por contexto funcional.
+
+A borda HTTP das entidades CRUD principais foi alinhada para um modelo mais RESTful:
+- `POST` para criacao
+- `GET /recurso/{id}` para leitura pontual
+- `PUT /recurso/{id}` para atualizacao completa do cadastro
+- `PATCH /recurso/{id}` para atualizacao parcial, preservando campos omitidos
+- `DELETE /recurso/{id}` para inativacao logica onde o dominio usa soft delete
+- `POST` permanece nas acoes de dominio, como `aprovar`, `reservar`, `autorizar`, `bloquear` e operacoes semelhantes
+
 ## Visao Geral
 
 A solucao esta organizada por modulos de negocio independentes, com uma API minima para expor estado da aplicacao e capacidades disponiveis.
@@ -38,6 +48,7 @@ src/
   ERP.Modules.Integracoes
   ERP.Modules.Vendas
 tests/
+  ERP.Api.IntegrationTests
   ERP.Modules.Empresas.UnitTests
   ERP.Modules.Fornecedores.UnitTests
   ERP.Modules.Catalogo.UnitTests
@@ -78,6 +89,8 @@ Executar a API:
 dotnet run --project .\src\ERP.Api\ERP.Api.csproj
 ```
 
+Os logs da API sao emitidos em JSON no console, com `scope`, `timestamp`, `X-Correlation-Id` e trilha minima de operacoes sensiveis para facilitar suporte, observabilidade e deploy em plataforma.
+
 Por padrao, a API expoe endpoints minimos:
 
 - `GET /`
@@ -89,22 +102,32 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /modules`
 - `GET /system/storage`
 - `GET /system/events`
+- `GET /system/metrics`
 - `GET /estoque/movimentos`
 - `GET /empresas`
+- `GET /empresas/{id}`
 - `GET /fornecedores`
+- `GET /fornecedores/{id}`
 - `GET /catalogo/produtos`
+- `GET /catalogo/produtos/{id}`
 - `GET /clientes`
+- `GET /clientes/{id}`
 - `GET /depositos`
+- `GET /depositos/{id}`
 - `GET /identity/usuarios`
+- `GET /identity/usuarios/{id}`
 - `GET /identity/permissoes`
 - `GET /identity/perfis/padroes`
 - `GET /identity/perfis`
+- `GET /identity/perfis/{id}`
 - `POST /identity/auth/login`
 - `POST /identity/oauth/token`
 - `POST /identity/oauth/refresh`
 - `GET /compras/importacoes-nota-entrada`
 - `GET /vendas/pedidos`
+- `GET /vendas/pedidos/{id}`
 - `GET /fiscal/notas`
+- `GET /fiscal/notas/{id}`
 - `GET /integracoes/webhooks`
 
 ## Como Rodar os Testes
@@ -113,6 +136,12 @@ Todos os testes:
 
 ```powershell
 dotnet test ERP.sln
+```
+
+Somente integracao HTTP da API:
+
+```powershell
+dotnet test .\tests\ERP.Api.IntegrationTests\ERP.Api.IntegrationTests.csproj
 ```
 
 Somente um modulo:
@@ -140,6 +169,8 @@ Opcionalmente:
 5. Solicitar um JWT em `POST /identity/oauth/token`.
 6. Enviar `Authorization: Bearer {token}` nas operacoes mutaveis protegidas.
 7. Quando o access token expirar, renovar em `POST /identity/oauth/refresh`.
+8. Para `POST /integracoes/webhooks`, em chamadas externas sem sessao, enviar `X-Webhook-Signature` com a assinatura HMAC-SHA256 de `EventoId:Origem:Payload`.
+9. Configurar `WebhookSecurity:SharedSecret` no ambiente para habilitar a validacao da assinatura.
 
 Observacao: o primeiro usuario cadastrado para cada empresa recebe automaticamente o perfil padrao `Administrador`, e a resposta de cadastro retorna `bootstrapAdministrador = true`.
 
@@ -226,6 +257,10 @@ Retorna o provider de armazenamento ativo e a contagem atual de entidades em mem
 
 Retorna a trilha de eventos internos gerados pelas operacoes integradas entre modulos, com filtros opcionais por tipo e modulo de origem.
 
+`GET /system/metrics`
+
+Retorna metricas operacionais em memoria sobre requests HTTP, falhas, operacoes de dominio e excecoes. Tambem ha `ActivitySource` e `Meter` internos para evoluir a observabilidade da API.
+
 `GET /estoque/movimentos`
 
 Retorna o historico operacional de movimentos de estoque, com filtro opcional por produto e deposito.
@@ -233,6 +268,14 @@ Retorna o historico operacional de movimentos de estoque, com filtro opcional po
 `GET /empresas`
 
 Retorna empresas com filtros opcionais por status, termo e paginacao.
+
+`PATCH /empresas/{id}`
+
+Aplica alteracoes parciais no cadastro da empresa, mantendo os campos omitidos.
+
+`DELETE /empresas/{id}`
+
+Executa a inativacao logica da empresa usando semantica RESTful.
 
 `GET /catalogo/produtos`
 
@@ -242,13 +285,37 @@ Retorna produtos com filtros opcionais por empresa, status ativo, termo e pagina
 
 Retorna clientes com filtros opcionais por empresa, status, termo e paginacao.
 
+`PATCH /clientes/{id}`
+
+Aplica alteracoes parciais no cadastro do cliente, preservando os campos omitidos.
+
+`DELETE /clientes/{id}`
+
+Executa a inativacao logica do cliente usando semantica RESTful.
+
 `GET /fornecedores`
 
 Retorna fornecedores com filtros opcionais por empresa, status, termo e paginacao.
 
+`PATCH /fornecedores/{id}`
+
+Aplica alteracoes parciais no cadastro do fornecedor, preservando os campos omitidos.
+
+`DELETE /fornecedores/{id}`
+
+Executa a inativacao logica do fornecedor usando semantica RESTful.
+
 `GET /depositos`
 
 Retorna depositos com filtros opcionais por empresa, status, termo e paginacao.
+
+`PATCH /depositos/{id}`
+
+Aplica alteracoes parciais no cadastro do deposito, preservando o nome atual quando o campo nao for enviado.
+
+`DELETE /depositos/{id}`
+
+Executa a inativacao logica do deposito usando semantica RESTful.
 
 `GET /identity/usuarios`
 
@@ -265,6 +332,10 @@ Retorna o catalogo de perfis padrao disponibilizados pela aplicacao para novas e
 `GET /identity/perfis`
 
 Retorna perfis de acesso por empresa, com filtros por termo e paginacao.
+
+`PATCH /identity/perfis/{id}`
+
+Permite alterar parcialmente nome e permissoes do perfil de acesso, preservando os campos omitidos.
 
 `POST /identity/auth/login`
 
@@ -293,6 +364,10 @@ Retorna notas fiscais com filtros opcionais por status, cliente e paginacao.
 `GET /integracoes/webhooks`
 
 Retorna o historico operacional de webhooks processados, com filtros por origem, status, evento e paginacao.
+
+`POST /integracoes/webhooks`
+
+Recebe um webhook externo, aplica idempotencia e registra o resultado do processamento. O endpoint aceita sessao autenticada com permissao `INTEGRACOES_MANAGE` ou assinatura no header `X-Webhook-Signature`.
 
 Exemplos de consulta:
 

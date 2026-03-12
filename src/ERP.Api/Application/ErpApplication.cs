@@ -1,8 +1,10 @@
 using ERP.BuildingBlocks;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Integration;
+using ERP.Api.Application.Observability;
 using ERP.Api.Application.Security;
 using ERP.Api.Application.Storage;
+using ERP.Api.Application.Storage.Repositories;
 using ERP.Api.Application.Validation;
 using ERP.Modules.Catalogo;
 using ERP.Modules.Clientes;
@@ -15,13 +17,20 @@ using ERP.Modules.Fornecedores;
 using ERP.Modules.Identity;
 using ERP.Modules.Integracoes;
 using ERP.Modules.Vendas;
+using Microsoft.Extensions.Logging;
 
 namespace ERP.Api.Application;
 
 public sealed class NotFoundException(string message) : Exception(message);
 public sealed class ForbiddenException(string message) : Exception(message);
 
-public sealed class ErpApplicationService(IErpStore store)
+public sealed class ErpApplicationService(
+    IErpStore store,
+    ILogger<ErpApplicationService>? logger = null,
+    InMemoryObservabilityCollector? observabilityCollector = null,
+    IEmpresaRepository? empresaRepository = null,
+    IClienteRepository? clienteRepository = null,
+    IFornecedorRepository? fornecedorRepository = null)
 {
     public PagedResponse<EmpresaResponse> ConsultarEmpresas(ConsultarEmpresasRequest request)
     {
@@ -54,12 +63,12 @@ public sealed class ErpApplicationService(IErpStore store)
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Documento, "Documento");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.NomeFantasia, "NomeFantasia");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.RazaoSocial, "RazaoSocial");
-            var repository = new EmpresaRepository(store);
-            var service = new CadastroEmpresaService(repository);
+            var service = new CadastroEmpresaService(empresaRepository ?? new EmpresaStoreRepository(store));
             var empresa = service.Cadastrar(request.Documento, request.NomeFantasia, request.RazaoSocial);
             EnsurePerfisPadraoEmpresa(empresa.Id);
             AddIntegrationEvent("empresas.empresa_cadastrada", "Empresas", empresa.Id.ToString(), $"Empresa {empresa.Documento} cadastrada.");
             store.Persist();
+            LogMutation("Empresa cadastrada", empresa.Id, empresa.Id, ("documento", empresa.Documento));
             return MapEmpresa(empresa);
         }
     }
@@ -74,6 +83,27 @@ public sealed class ErpApplicationService(IErpStore store)
             empresa.AtualizarCadastro(request.NomeFantasia, request.RazaoSocial);
             store.Persist();
             return MapEmpresa(empresa);
+        }
+    }
+
+    public EmpresaResponse AtualizarEmpresaParcial(Guid empresaId, AtualizarEmpresaParcialRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var empresa = GetEmpresa(empresaId);
+            var nomeFantasia = string.IsNullOrWhiteSpace(request.NomeFantasia) ? empresa.NomeFantasia : request.NomeFantasia.Trim();
+            var razaoSocial = string.IsNullOrWhiteSpace(request.RazaoSocial) ? empresa.RazaoSocial : request.RazaoSocial.Trim();
+            empresa.AtualizarCadastro(nomeFantasia, razaoSocial);
+            store.Persist();
+            return MapEmpresa(empresa);
+        }
+    }
+
+    public EmpresaResponse ObterEmpresa(Guid empresaId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapEmpresa(GetEmpresa(empresaId));
         }
     }
 
@@ -180,6 +210,14 @@ public sealed class ErpApplicationService(IErpStore store)
         }
     }
 
+    public ProdutoResponse ObterProduto(Guid produtoId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapProduto(GetProduto(produtoId));
+        }
+    }
+
     public ProdutoResponse AdicionarVariacao(Guid produtoId, AddVariacaoRequest request)
     {
         lock (store.SyncRoot)
@@ -242,8 +280,7 @@ public sealed class ErpApplicationService(IErpStore store)
             _ = GetEmpresaOperacional(request.EmpresaId);
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Documento, "Documento");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
-            var repository = new ClienteRepository(store);
-            var service = new CadastroClienteService(repository);
+            var service = new CadastroClienteService(clienteRepository ?? new ClienteStoreRepository(store));
             var cliente = service.Cadastrar(request.EmpresaId, request.Documento, request.Nome, request.Email);
             AddIntegrationEvent("clientes.cliente_cadastrado", "Clientes", cliente.Id.ToString(), $"Cliente {cliente.Documento} cadastrado.");
             store.Persist();
@@ -260,6 +297,27 @@ public sealed class ErpApplicationService(IErpStore store)
             cliente.AtualizarCadastro(request.Nome, request.Email);
             store.Persist();
             return MapCliente(cliente);
+        }
+    }
+
+    public ClienteResponse AtualizarClienteParcial(Guid clienteId, AtualizarClienteParcialRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var cliente = GetCliente(clienteId);
+            var nome = string.IsNullOrWhiteSpace(request.Nome) ? cliente.Nome : request.Nome.Trim();
+            var email = request.Email ?? cliente.Email;
+            cliente.AtualizarCadastro(nome, email);
+            store.Persist();
+            return MapCliente(cliente);
+        }
+    }
+
+    public ClienteResponse ObterCliente(Guid clienteId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapCliente(GetCliente(clienteId));
         }
     }
 
@@ -334,8 +392,7 @@ public sealed class ErpApplicationService(IErpStore store)
             _ = GetEmpresaOperacional(request.EmpresaId);
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Documento, "Documento");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
-            var repository = new FornecedorRepository(store);
-            var service = new CadastroFornecedorService(repository);
+            var service = new CadastroFornecedorService(fornecedorRepository ?? new FornecedorStoreRepository(store));
             var fornecedor = service.Cadastrar(request.EmpresaId, request.Documento, request.Nome, request.Email);
             AddIntegrationEvent("fornecedores.fornecedor_cadastrado", "Fornecedores", fornecedor.Id.ToString(), $"Fornecedor {fornecedor.Documento} cadastrado.");
             store.Persist();
@@ -352,6 +409,27 @@ public sealed class ErpApplicationService(IErpStore store)
             fornecedor.AtualizarCadastro(request.Nome, request.Email);
             store.Persist();
             return MapFornecedor(fornecedor);
+        }
+    }
+
+    public FornecedorResponse AtualizarFornecedorParcial(Guid fornecedorId, AtualizarFornecedorParcialRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var fornecedor = GetFornecedor(fornecedorId);
+            var nome = string.IsNullOrWhiteSpace(request.Nome) ? fornecedor.Nome : request.Nome.Trim();
+            var email = request.Email ?? fornecedor.Email;
+            fornecedor.AtualizarCadastro(nome, email);
+            store.Persist();
+            return MapFornecedor(fornecedor);
+        }
+    }
+
+    public FornecedorResponse ObterFornecedor(Guid fornecedorId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapFornecedor(GetFornecedor(fornecedorId));
         }
     }
 
@@ -443,6 +521,26 @@ public sealed class ErpApplicationService(IErpStore store)
             deposito.AtualizarNome(request.Nome);
             store.Persist();
             return MapDeposito(deposito);
+        }
+    }
+
+    public DepositoResponse AtualizarDepositoParcial(Guid depositoId, AtualizarDepositoParcialRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var deposito = GetDeposito(depositoId);
+            var nome = string.IsNullOrWhiteSpace(request.Nome) ? deposito.Nome : request.Nome.Trim();
+            deposito.AtualizarNome(nome);
+            store.Persist();
+            return MapDeposito(deposito);
+        }
+    }
+
+    public DepositoResponse ObterDeposito(Guid depositoId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapDeposito(GetDeposito(depositoId));
         }
     }
 
@@ -568,6 +666,29 @@ public sealed class ErpApplicationService(IErpStore store)
         }
     }
 
+    public PerfilAcessoResponse AtualizarPerfilAcessoParcial(Guid perfilAcessoId, AtualizarPerfilAcessoParcialRequest request)
+    {
+        lock (store.SyncRoot)
+        {
+            var perfilAcesso = GetPerfilAcesso(perfilAcessoId);
+            var nome = string.IsNullOrWhiteSpace(request.Nome) ? perfilAcesso.Nome : request.Nome.Trim();
+            var permissoes = request.Permissoes is null || request.Permissoes.Count == 0
+                ? perfilAcesso.Permissoes
+                : NormalizeKnownPermissions(request.Permissoes);
+            perfilAcesso.Atualizar(nome, permissoes);
+            store.Persist();
+            return MapPerfilAcesso(perfilAcesso);
+        }
+    }
+
+    public PerfilAcessoResponse ObterPerfilAcesso(Guid perfilAcessoId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapPerfilAcesso(GetPerfilAcesso(perfilAcessoId));
+        }
+    }
+
     public UsuarioResponse CadastrarUsuario(CreateUsuarioRequest request)
     {
         lock (store.SyncRoot)
@@ -587,6 +708,7 @@ public sealed class ErpApplicationService(IErpStore store)
 
             AddIntegrationEvent("identity.usuario_cadastrado", "Identity", usuario.Id.ToString(), $"Usuario {usuario.Email} cadastrado.");
             store.Persist();
+            LogMutation("Usuario cadastrado", usuario.Id, usuario.EmpresaId, ("email", usuario.Email), ("bootstrapAdministrador", isBootstrap));
             return MapUsuario(usuario, isBootstrap);
         }
     }
@@ -721,6 +843,7 @@ public sealed class ErpApplicationService(IErpStore store)
             var sessao = CreateSession(usuario);
             AddIntegrationEvent("identity.login_realizado", "Identity", usuario.Id.ToString(), $"Login realizado para {usuario.Email}.");
             store.Persist();
+            LogSecurity("Login efetuado", usuario.Id, usuario.EmpresaId, ("email", usuario.Email));
             return new SessaoAutenticacaoResponse(sessao.Token, sessao.ExpiraEm, MapUsuario(usuario));
         }
     }
@@ -733,6 +856,14 @@ public sealed class ErpApplicationService(IErpStore store)
             var sessao = GetSessaoAtiva(request.Token);
             var usuario = GetUsuario(sessao.UsuarioId);
             return new SessaoAutenticacaoResponse(sessao.Token, sessao.ExpiraEm, MapUsuario(usuario));
+        }
+    }
+
+    public UsuarioResponse ObterUsuario(Guid usuarioId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapUsuario(GetUsuario(usuarioId));
         }
     }
 
@@ -750,6 +881,7 @@ public sealed class ErpApplicationService(IErpStore store)
             }
 
             store.Persist();
+            LogSecurity("Logout efetuado", null, null, ("token", token));
         }
     }
 
@@ -1034,10 +1166,11 @@ public sealed class ErpApplicationService(IErpStore store)
         lock (store.SyncRoot)
         {
             ApplicationGuard.AgainstEmptyGuid(request.ClienteId, "ClienteId");
-            _ = GetCliente(request.ClienteId);
+            var cliente = GetCliente(request.ClienteId);
             var pedido = new PedidoVenda(request.ClienteId);
             store.Pedidos[pedido.Id] = pedido;
             store.Persist();
+            LogMutation("Pedido criado", pedido.Id, cliente.EmpresaId, ("clienteId", cliente.Id));
             return MapPedido(pedido);
         }
     }
@@ -1057,6 +1190,14 @@ public sealed class ErpApplicationService(IErpStore store)
             pedido.AdicionarItem(request.ProdutoId, request.Quantidade, request.PrecoUnitario);
             store.Persist();
             return MapPedido(pedido);
+        }
+    }
+
+    public PedidoVendaResponse ObterPedido(Guid pedidoId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapPedido(GetPedido(pedidoId));
         }
     }
 
@@ -1106,6 +1247,7 @@ public sealed class ErpApplicationService(IErpStore store)
                 }
 
                 AddIntegrationEvent("vendas.pedido_reservado", "Vendas", pedido.Id.ToString(), $"Pedido reservado no deposito {request.DepositoId}.");
+                LogMutation("Pedido reservado", pedido.Id, cliente.EmpresaId, ("depositoId", request.DepositoId));
                 return MapPedido(pedido);
             });
         }
@@ -1212,6 +1354,7 @@ public sealed class ErpApplicationService(IErpStore store)
                     movimentos.Count,
                     DateTimeOffset.UtcNow));
 
+                LogMutation("Nota de entrada importada", null, request.EmpresaId, ("chaveAcesso", request.ChaveAcesso), ("fornecedorId", request.FornecedorId), ("depositoId", request.DepositoId), ("movimentosGerados", movimentos.Count));
                 return new ResultadoImportacaoNotaResponse(
                     resultado.ImportadaComSucesso,
                     resultado.ItensPendentesConciliacao.Select(item => new ItemNotaEntradaExternaResponse(item.CodigoExterno, item.Descricao, item.Quantidade)).ToArray(),
@@ -1363,6 +1506,7 @@ public sealed class ErpApplicationService(IErpStore store)
                 }
 
                 AddIntegrationEvent("fiscal.nota_autorizada", "Fiscal", nota.Id.ToString(), $"Nota autorizada com evento {request.EventoId}.");
+                LogMutation("Nota fiscal autorizada", nota.Id, cliente.EmpresaId, ("eventoId", request.EventoId), ("depositoId", request.DepositoId));
                 return MapNotaFiscal(nota);
             });
         }
@@ -1384,6 +1528,14 @@ public sealed class ErpApplicationService(IErpStore store)
             AddIntegrationEvent("fiscal.nota_rejeitada", "Fiscal", nota.Id.ToString(), $"Nota rejeitada com codigo {request.Codigo}.");
             store.Persist();
             return MapNotaFiscal(nota);
+        }
+    }
+
+    public NotaFiscalResponse ObterNotaFiscal(Guid notaFiscalId)
+    {
+        lock (store.SyncRoot)
+        {
+            return MapNotaFiscal(GetNotaFiscal(notaFiscalId));
         }
     }
 
@@ -1422,6 +1574,7 @@ public sealed class ErpApplicationService(IErpStore store)
                 DateTimeOffset.UtcNow));
             AddIntegrationEvent("integracoes.webhook_processado", "Integracoes", request.EventoId, $"Webhook processado da origem {request.Origem}.");
             store.Persist();
+            LogMutation("Webhook processado", null, null, ("eventoId", request.EventoId), ("origem", request.Origem), ("status", resultado.Status.ToString()));
             return new ResultadoWebhookResponse(resultado.Status.ToString(), resultado.Mensagem);
         }
     }
@@ -1836,6 +1989,54 @@ public sealed class ErpApplicationService(IErpStore store)
         store.MovimentosEstoque.Add(movimento);
     }
 
+    private void LogMutation(string action, Guid? aggregateId, Guid? empresaId, params (string Key, object? Value)[] data)
+    {
+        observabilityCollector?.RecordDomainOperation(action);
+        ErpObservability.DomainOperations.Add(1, new KeyValuePair<string, object?>("action", action));
+        if (logger is null)
+        {
+            return;
+        }
+
+        using var scope = logger.BeginScope(BuildScope(action, aggregateId, empresaId, data));
+        logger.LogInformation("{Action}", action);
+    }
+
+    private void LogSecurity(string action, Guid? usuarioId, Guid? empresaId, params (string Key, object? Value)[] data)
+    {
+        observabilityCollector?.RecordDomainOperation(action);
+        ErpObservability.DomainOperations.Add(1, new KeyValuePair<string, object?>("action", action));
+        if (logger is null)
+        {
+            return;
+        }
+
+        var payload = new List<(string Key, object? Value)>(data)
+        {
+            ("usuarioId", usuarioId)
+        };
+
+        using var scope = logger.BeginScope(BuildScope(action, null, empresaId, payload.ToArray()));
+        logger.LogInformation("{Action}", action);
+    }
+
+    private static Dictionary<string, object?> BuildScope(string action, Guid? aggregateId, Guid? empresaId, params (string Key, object? Value)[] data)
+    {
+        var scope = new Dictionary<string, object?>
+        {
+            ["Action"] = action,
+            ["AggregateId"] = aggregateId,
+            ["EmpresaId"] = empresaId
+        };
+
+        foreach (var (key, value) in data)
+        {
+            scope[key] = value;
+        }
+
+        return scope;
+    }
+
     private SessaoAutenticacaoRegistro CreateSession(Usuario usuario)
     {
         var now = DateTimeOffset.UtcNow;
@@ -1937,36 +2138,12 @@ public sealed class ErpApplicationService(IErpStore store)
         }
     }
 
-    private sealed class EmpresaRepository(IErpStore store) : IEmpresaRepository
-    {
-        public bool DocumentoJaExiste(string documento) =>
-            store.Empresas.Values.Any(empresa => string.Equals(empresa.Documento, documento.Trim(), StringComparison.OrdinalIgnoreCase));
-
-        public void Add(Empresa empresa) => store.Empresas[empresa.Id] = empresa;
-    }
-
     private sealed class ProdutoRepository(IErpStore store) : IProdutoRepository
     {
         public bool SkuJaExiste(Guid empresaId, string sku) =>
             store.Produtos.Values.Any(produto => produto.EmpresaId == empresaId && string.Equals(produto.Sku, sku, StringComparison.OrdinalIgnoreCase));
 
         public void Add(Produto produto) => store.Produtos[produto.Id] = produto;
-    }
-
-    private sealed class ClienteRepository(IErpStore store) : IClienteRepository
-    {
-        public bool DocumentoJaExiste(Guid empresaId, string documento) =>
-            store.Clientes.Values.Any(cliente => cliente.EmpresaId == empresaId && string.Equals(cliente.Documento, documento.Trim(), StringComparison.OrdinalIgnoreCase));
-
-        public void Add(Cliente cliente) => store.Clientes[cliente.Id] = cliente;
-    }
-
-    private sealed class FornecedorRepository(IErpStore store) : IFornecedorRepository
-    {
-        public bool DocumentoJaExiste(Guid empresaId, string documento) =>
-            store.Fornecedores.Values.Any(fornecedor => fornecedor.EmpresaId == empresaId && string.Equals(fornecedor.Documento, documento.Trim(), StringComparison.OrdinalIgnoreCase));
-
-        public void Add(Fornecedor fornecedor) => store.Fornecedores[fornecedor.Id] = fornecedor;
     }
 
     private sealed class DepositoRepository(IErpStore store) : IDepositoRepository

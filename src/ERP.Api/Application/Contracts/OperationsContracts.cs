@@ -14,3 +14,25 @@ public sealed record StorageStatusResponse(
     int Saldos,
     int ChavesImportadas,
     int EventosWebhook);
+
+public sealed record ObservabilityMetricsResponse(
+    long TotalHttpRequests,
+    long TotalHttpFailures,
+    long TotalDomainOperations,
+    long TotalExceptions,
+    DateTimeOffset? LastRequestAt,
+    DateTimeOffset? LastDomainOperationAt,
+    IReadOnlyCollection<EndpointMetricSnapshot> Endpoints,
+    IReadOnlyCollection<OperationMetricSnapshot> Operations);
+
+public sealed record EndpointMetricSnapshot(
+    string Method,
+    string Path,
+    long TotalRequests,
+    long TotalFailures,
+    int LastStatusCode,
+    double AverageDurationMs);
+
+public sealed record OperationMetricSnapshot(
+    string Action,
+    long Total);

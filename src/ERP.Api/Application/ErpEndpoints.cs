@@ -1,6 +1,7 @@
 using ERP.BuildingBlocks;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Security;
+using ERP.Api.Application.Observability;
 using Microsoft.Net.Http.Headers;
 
 namespace ERP.Api.Application;
@@ -17,6 +18,12 @@ public static class ErpEndpoints
             .WithSummary("Consulta empresas.")
             .WithDescription("Lista empresas com filtros opcionais por status, termo de busca e paginacao. Use este endpoint para montar seletores administrativos e validar o contexto empresarial disponivel.")
             .Produces(StatusCodes.Status200OK);
+        empresas.MapGet("/{empresaId:guid}", (Guid empresaId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterEmpresa(empresaId))))
+            .WithSummary("Consulta uma empresa por id.")
+            .WithDescription("Retorna os dados cadastrais atuais da empresa informada.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         empresas.MapPost(string.Empty, (HttpContext httpContext, CreateEmpresaRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
@@ -29,13 +36,25 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden);
-        empresas.MapPost("/{empresaId:guid}/atualizar", (HttpContext httpContext, Guid empresaId, AtualizarEmpresaRequest request, ErpApplicationService service) =>
+        empresas.MapPut("/{empresaId:guid}", (HttpContext httpContext, Guid empresaId, AtualizarEmpresaRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
             return Results.Ok(ApiResponses.Ok(service.AtualizarEmpresa(empresaId, request)));
         })
         .WithSummary("Atualiza dados cadastrais da empresa.")
         .WithDescription("Atualiza nome fantasia e razao social da empresa informada, preservando historico e contexto operacional ja existente.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
+        empresas.MapMethods("/{empresaId:guid}", ["PATCH"], (HttpContext httpContext, Guid empresaId, AtualizarEmpresaParcialRequest request, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
+            return Results.Ok(ApiResponses.Ok(service.AtualizarEmpresaParcial(empresaId, request)));
+        })
+        .WithSummary("Atualiza parcialmente a empresa.")
+        .WithDescription("Aplica alteracoes parciais no cadastro da empresa, preservando os campos omitidos no payload.")
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
@@ -63,6 +82,17 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound);
+        empresas.MapDelete("/{empresaId:guid}", (HttpContext httpContext, Guid empresaId, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
+            return Results.Ok(ApiResponses.Ok(service.InativarEmpresa(empresaId)));
+        })
+        .WithSummary("Inativa uma empresa por DELETE logico.")
+        .WithDescription("Executa a inativacao logica da empresa via semantica RESTful, mantendo historico e dados ja existentes.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
         empresas.MapPost("/{empresaId:guid}/bloquear", (HttpContext httpContext, Guid empresaId, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.EmpresasManage);
@@ -81,6 +111,12 @@ public static class ErpEndpoints
             .WithSummary("Consulta produtos.")
             .WithDescription("Lista produtos por empresa, status ativo, termo e paginacao. Adequado para pesquisa operacional e montagem de catalogo no frontend.")
             .Produces(StatusCodes.Status200OK);
+        catalogo.MapGet("/produtos/{produtoId:guid}", (Guid produtoId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterProduto(produtoId))))
+            .WithSummary("Consulta um produto por id.")
+            .WithDescription("Retorna os dados atuais do produto, incluindo dados fiscais e variacoes cadastradas.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         catalogo.MapPost("/produtos", (HttpContext httpContext, CreateProdutoRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.CatalogoManage, request.EmpresaId);
@@ -100,6 +136,17 @@ public static class ErpEndpoints
         })
         .WithSummary("Inativa um produto.")
         .WithDescription("Retira o produto de operacao mantendo historico, impedindo novas movimentacoes comerciais com ele.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
+        catalogo.MapDelete("/produtos/{produtoId:guid}", (HttpContext httpContext, Guid produtoId, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.CatalogoManage, service.ObterEmpresaIdDoProduto(produtoId));
+            return Results.Ok(ApiResponses.Ok(service.InativarProduto(produtoId)));
+        })
+        .WithSummary("Inativa um produto por DELETE logico.")
+        .WithDescription("Executa a inativacao logica do produto via semantica RESTful, preservando o historico operacional.")
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden)
@@ -135,6 +182,12 @@ public static class ErpEndpoints
             .WithSummary("Consulta clientes.")
             .WithDescription("Lista clientes com filtros por empresa, status, termo e paginacao. Use para pesquisa comercial e suporte ao fluxo de vendas.")
             .Produces(StatusCodes.Status200OK);
+        clientes.MapGet("/{clienteId:guid}", (Guid clienteId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterCliente(clienteId))))
+            .WithSummary("Consulta um cliente por id.")
+            .WithDescription("Retorna o cadastro atual do cliente informado.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         clientes.MapPost(string.Empty, (HttpContext httpContext, CreateClienteRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, request.EmpresaId);
@@ -147,13 +200,25 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden);
-        clientes.MapPost("/{clienteId:guid}/atualizar", (HttpContext httpContext, Guid clienteId, AtualizarClienteRequest request, ErpApplicationService service) =>
+        clientes.MapPut("/{clienteId:guid}", (HttpContext httpContext, Guid clienteId, AtualizarClienteRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, service.ObterEmpresaIdDoCliente(clienteId));
             return Results.Ok(ApiResponses.Ok(service.AtualizarCliente(clienteId, request)));
         })
         .WithSummary("Atualiza um cliente.")
         .WithDescription("Atualiza nome e email do cliente, preservando seus vinculos operacionais ja existentes.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
+        clientes.MapMethods("/{clienteId:guid}", ["PATCH"], (HttpContext httpContext, Guid clienteId, AtualizarClienteParcialRequest request, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, service.ObterEmpresaIdDoCliente(clienteId));
+            return Results.Ok(ApiResponses.Ok(service.AtualizarClienteParcial(clienteId, request)));
+        })
+        .WithSummary("Atualiza parcialmente um cliente.")
+        .WithDescription("Aplica alteracoes parciais no cadastro do cliente, mantendo os campos nao enviados.")
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
@@ -181,6 +246,17 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound);
+        clientes.MapDelete("/{clienteId:guid}", (HttpContext httpContext, Guid clienteId, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, service.ObterEmpresaIdDoCliente(clienteId));
+            return Results.Ok(ApiResponses.Ok(service.InativarCliente(clienteId)));
+        })
+        .WithSummary("Inativa um cliente por DELETE logico.")
+        .WithDescription("Executa a inativacao logica do cliente via semantica RESTful, mantendo o historico comercial.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
         clientes.MapPost("/{clienteId:guid}/bloquear", (HttpContext httpContext, Guid clienteId, BloquearClienteRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.ClientesManage, service.ObterEmpresaIdDoCliente(clienteId));
@@ -200,6 +276,12 @@ public static class ErpEndpoints
             .WithSummary("Consulta fornecedores.")
             .WithDescription("Lista fornecedores com filtros por empresa, status, termo e paginacao. Apoia compras, conciliacao e auditoria de origem dos documentos de entrada.")
             .Produces(StatusCodes.Status200OK);
+        fornecedores.MapGet("/{fornecedorId:guid}", (Guid fornecedorId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterFornecedor(fornecedorId))))
+            .WithSummary("Consulta um fornecedor por id.")
+            .WithDescription("Retorna o cadastro atual do fornecedor informado.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         fornecedores.MapPost(string.Empty, (HttpContext httpContext, CreateFornecedorRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, request.EmpresaId);
@@ -212,13 +294,25 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden);
-        fornecedores.MapPost("/{fornecedorId:guid}/atualizar", (HttpContext httpContext, Guid fornecedorId, AtualizarFornecedorRequest request, ErpApplicationService service) =>
+        fornecedores.MapPut("/{fornecedorId:guid}", (HttpContext httpContext, Guid fornecedorId, AtualizarFornecedorRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, service.ObterEmpresaIdDoFornecedor(fornecedorId));
             return Results.Ok(ApiResponses.Ok(service.AtualizarFornecedor(fornecedorId, request)));
         })
         .WithSummary("Atualiza um fornecedor.")
         .WithDescription("Atualiza nome e email do fornecedor sem invalidar o historico de compras ja registradas.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
+        fornecedores.MapMethods("/{fornecedorId:guid}", ["PATCH"], (HttpContext httpContext, Guid fornecedorId, AtualizarFornecedorParcialRequest request, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, service.ObterEmpresaIdDoFornecedor(fornecedorId));
+            return Results.Ok(ApiResponses.Ok(service.AtualizarFornecedorParcial(fornecedorId, request)));
+        })
+        .WithSummary("Atualiza parcialmente um fornecedor.")
+        .WithDescription("Aplica alteracoes parciais no cadastro do fornecedor, mantendo os campos nao enviados.")
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
@@ -246,6 +340,17 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound);
+        fornecedores.MapDelete("/{fornecedorId:guid}", (HttpContext httpContext, Guid fornecedorId, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, service.ObterEmpresaIdDoFornecedor(fornecedorId));
+            return Results.Ok(ApiResponses.Ok(service.InativarFornecedor(fornecedorId)));
+        })
+        .WithSummary("Inativa um fornecedor por DELETE logico.")
+        .WithDescription("Executa a inativacao logica do fornecedor via semantica RESTful, preservando o historico de compras.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
         fornecedores.MapPost("/{fornecedorId:guid}/bloquear", (HttpContext httpContext, Guid fornecedorId, BloquearFornecedorRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.FornecedoresManage, service.ObterEmpresaIdDoFornecedor(fornecedorId));
@@ -265,6 +370,12 @@ public static class ErpEndpoints
             .WithSummary("Consulta depositos.")
             .WithDescription("Lista depositos por empresa, status, termo e paginacao. Use para selecao operacional de armazenagem e roteamento de estoque.")
             .Produces(StatusCodes.Status200OK);
+        depositos.MapGet("/{depositoId:guid}", (Guid depositoId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterDeposito(depositoId))))
+            .WithSummary("Consulta um deposito por id.")
+            .WithDescription("Retorna o cadastro atual do deposito informado.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         depositos.MapPost(string.Empty, (HttpContext httpContext, CreateDepositoRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.DepositosManage, request.EmpresaId);
@@ -277,13 +388,25 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden);
-        depositos.MapPost("/{depositoId:guid}/atualizar", (HttpContext httpContext, Guid depositoId, AtualizarDepositoRequest request, ErpApplicationService service) =>
+        depositos.MapPut("/{depositoId:guid}", (HttpContext httpContext, Guid depositoId, AtualizarDepositoRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.DepositosManage, service.ObterEmpresaIdDoDeposito(depositoId));
             return Results.Ok(ApiResponses.Ok(service.AtualizarDeposito(depositoId, request)));
         })
         .WithSummary("Atualiza um deposito.")
         .WithDescription("Atualiza o nome do deposito sem alterar seu identificador nem os saldos ja mantidos nele.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
+        depositos.MapMethods("/{depositoId:guid}", ["PATCH"], (HttpContext httpContext, Guid depositoId, AtualizarDepositoParcialRequest request, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.DepositosManage, service.ObterEmpresaIdDoDeposito(depositoId));
+            return Results.Ok(ApiResponses.Ok(service.AtualizarDepositoParcial(depositoId, request)));
+        })
+        .WithSummary("Atualiza parcialmente um deposito.")
+        .WithDescription("Aplica alteracoes parciais no cadastro do deposito, preservando o nome atual quando o campo nao for informado.")
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
@@ -311,6 +434,17 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound);
+        depositos.MapDelete("/{depositoId:guid}", (HttpContext httpContext, Guid depositoId, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.DepositosManage, service.ObterEmpresaIdDoDeposito(depositoId));
+            return Results.Ok(ApiResponses.Ok(service.InativarDeposito(depositoId)));
+        })
+        .WithSummary("Inativa um deposito por DELETE logico.")
+        .WithDescription("Executa a inativacao logica do deposito via semantica RESTful, preservando o historico operacional.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
 
         var identity = app.MapGroup("/identity").WithTags("Identity");
         identity.MapGet("/permissoes", (ErpApplicationService service) =>
@@ -327,11 +461,23 @@ public static class ErpEndpoints
             .WithSummary("Consulta perfis de acesso por empresa.")
             .WithDescription("Lista perfis de acesso por empresa com suporte a filtro textual e paginacao para administracao do modulo Identity.")
             .Produces(StatusCodes.Status200OK);
+        identity.MapGet("/perfis/{perfilAcessoId:guid}", (Guid perfilAcessoId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterPerfilAcesso(perfilAcessoId))))
+            .WithSummary("Consulta um perfil de acesso por id.")
+            .WithDescription("Retorna o perfil de acesso informado com o conjunto atual de permissoes.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         identity.MapGet("/usuarios", (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
             Results.Ok(ApiResponses.Ok(service.ConsultarUsuarios(new ConsultarUsuariosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))))
             .WithSummary("Consulta usuarios por empresa.")
             .WithDescription("Lista usuarios por empresa com filtros por status e termo de busca, retornando tambem permissoes e perfis associados.")
             .Produces(StatusCodes.Status200OK);
+        identity.MapGet("/usuarios/{usuarioId:guid}", (Guid usuarioId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterUsuario(usuarioId))))
+            .WithSummary("Consulta um usuario por id.")
+            .WithDescription("Retorna o cadastro atual do usuario informado, incluindo permissoes e perfis vinculados.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         identity.MapPost("/perfis", (HttpContext httpContext, CreatePerfilAcessoRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, request.EmpresaId);
@@ -344,7 +490,7 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status401Unauthorized)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status400BadRequest);
-        identity.MapPost("/perfis/{perfilAcessoId:guid}/atualizar", (HttpContext httpContext, Guid perfilAcessoId, AtualizarPerfilAcessoRequest request, ErpApplicationService service) =>
+        identity.MapPut("/perfis/{perfilAcessoId:guid}", (HttpContext httpContext, Guid perfilAcessoId, AtualizarPerfilAcessoRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoPerfilAcesso(perfilAcessoId));
             return Results.Ok(ApiResponses.Ok(service.AtualizarPerfilAcesso(perfilAcessoId, request)));
@@ -378,6 +524,18 @@ public static class ErpEndpoints
         })
         .WithSummary("Define ou altera a senha do usuario.")
         .WithDescription("Configura ou altera a senha do usuario. Este endpoint pode ser usado no bootstrap inicial ou em manutencao administrativa de credenciais.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
+        identity.MapMethods("/perfis/{perfilAcessoId:guid}", ["PATCH"], (HttpContext httpContext, Guid perfilAcessoId, AtualizarPerfilAcessoParcialRequest request, ErpApplicationService service) =>
+        {
+            RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, service.ObterEmpresaIdDoPerfilAcesso(perfilAcessoId));
+            return Results.Ok(ApiResponses.Ok(service.AtualizarPerfilAcessoParcial(perfilAcessoId, request)));
+        })
+        .WithSummary("Atualiza parcialmente um perfil de acesso.")
+        .WithDescription("Permite alterar apenas o nome ou apenas o conjunto de permissoes do perfil, preservando os campos omitidos.")
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
@@ -559,6 +717,12 @@ public static class ErpEndpoints
             .WithSummary("Consulta pedidos de venda.")
             .WithDescription("Lista pedidos por status, cliente e paginacao. Use para acompanhamento comercial e operacional do ciclo de vendas.")
             .Produces(StatusCodes.Status200OK);
+        vendas.MapGet("/pedidos/{pedidoId:guid}", (Guid pedidoId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterPedido(pedidoId))))
+            .WithSummary("Consulta um pedido por id.")
+            .WithDescription("Retorna o estado atual e os itens do pedido informado.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         vendas.MapPost("/pedidos", (HttpContext httpContext, CreatePedidoVendaRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.VendasManage, service.ObterEmpresaIdDoCliente(request.ClienteId));
@@ -644,6 +808,12 @@ public static class ErpEndpoints
             .WithSummary("Consulta notas fiscais.")
             .WithDescription("Lista notas fiscais por status, cliente e paginacao. Use para acompanhamento do ciclo fiscal e conciliacao de faturamento.")
             .Produces(StatusCodes.Status200OK);
+        fiscal.MapGet("/notas/{notaFiscalId:guid}", (Guid notaFiscalId, ErpApplicationService service) =>
+            Results.Ok(ApiResponses.Ok(service.ObterNotaFiscal(notaFiscalId))))
+            .WithSummary("Consulta uma nota fiscal por id.")
+            .WithDescription("Retorna o estado atual da nota fiscal, incluindo itens e historico relevante.")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
         fiscal.MapPost("/notas", (HttpContext httpContext, CreateNotaFiscalRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.FiscalManage, service.ObterEmpresaIdDoCliente(request.ClienteId));
@@ -699,13 +869,13 @@ public static class ErpEndpoints
             .WithSummary("Consulta webhooks processados.")
             .WithDescription("Lista o historico operacional de webhooks por origem, status e evento, facilitando suporte e rastreabilidade de integracoes externas.")
             .Produces(StatusCodes.Status200OK);
-        integracoes.MapPost("/webhooks", (HttpContext httpContext, ProcessarWebhookRequest request, ErpApplicationService service) =>
+        integracoes.MapPost("/webhooks", (HttpContext httpContext, ProcessarWebhookRequest request, ErpApplicationService service, WebhookAccessService webhookAccessService) =>
         {
-            RequirePermission(httpContext, service, IdentityPermissions.IntegracoesManage);
+            webhookAccessService.ValidateOrThrow(httpContext, request, service);
             return Results.Ok(ApiResponses.Ok(service.ProcessarWebhook(request)));
         })
         .WithSummary("Processa webhook.")
-        .WithDescription("Recebe um webhook externo, aplica idempotencia e registra o resultado do processamento para posterior consulta operacional.")
+        .WithDescription("Recebe um webhook externo, aplica idempotencia e registra o resultado do processamento para posterior consulta operacional. Para chamadas externas, envie a assinatura HMAC no header configurado; para operacao interna, a API tambem aceita sessao autenticada com permissao de integracoes.")
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status401Unauthorized)
@@ -721,6 +891,7 @@ public static class ErpEndpoints
             errorApp.Run(async context =>
             {
                 var exception = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+                var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ERP.Api.Exceptions");
                 var (statusCode, code, message) = exception switch
                 {
                     DomainException domainException => (StatusCodes.Status400BadRequest, "domain_error", domainException.Message),
@@ -729,6 +900,18 @@ public static class ErpEndpoints
                     ForbiddenException forbiddenException => (StatusCodes.Status403Forbidden, "forbidden", forbiddenException.Message),
                     _ => (StatusCodes.Status500InternalServerError, "internal_error", "Erro interno da aplicacao.")
                 };
+
+                logger.Log(
+                    statusCode >= 500 ? LogLevel.Error : LogLevel.Warning,
+                    exception,
+                    "Request failed with {StatusCode} {ErrorCode} on {Method} {Path}",
+                    statusCode,
+                    code,
+                    context.Request.Method,
+                    context.Request.Path.Value);
+                var observability = context.RequestServices.GetRequiredService<InMemoryObservabilityCollector>();
+                observability.RecordException(code);
+                ErpObservability.Exceptions.Add(1, new KeyValuePair<string, object?>("error.code", code));
 
                 context.Response.StatusCode = statusCode;
                 await context.Response.WriteAsJsonAsync(ApiResponses.Error(code, message));

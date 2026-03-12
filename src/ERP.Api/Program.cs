@@ -1,7 +1,10 @@
 using ERP.Api.Application;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Health;
+using ERP.Api.Application.Logging;
+using ERP.Api.Application.Observability;
 using ERP.Api.Application.Storage;
+using ERP.Api.Application.Storage.Repositories;
 using ERP.Api.Application.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -10,6 +13,12 @@ using System.Text.Json.Serialization;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ ";
+});
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -75,6 +84,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.Configure<WebhookOptions>(builder.Configuration.GetSection(WebhookOptions.SectionName));
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -105,12 +115,19 @@ builder.Services.AddSingleton<IErpStore>(serviceProvider =>
         _ => new InMemoryErpStore()
     };
 });
+builder.Services.AddSingleton<InMemoryObservabilityCollector>();
+builder.Services.AddSingleton<ERP.Modules.Empresas.IEmpresaRepository, EmpresaStoreRepository>();
+builder.Services.AddSingleton<ERP.Modules.Clientes.IClienteRepository, ClienteStoreRepository>();
+builder.Services.AddSingleton<ERP.Modules.Fornecedores.IFornecedorRepository, FornecedorStoreRepository>();
 builder.Services.AddSingleton<ErpApplicationService>();
 builder.Services.AddSingleton<JwtTokenService>();
+builder.Services.AddSingleton<WebhookSignatureService>();
+builder.Services.AddSingleton<WebhookAccessService>();
 
 var app = builder.Build();
 
 app.UseErpExceptionHandling();
+app.UseStructuredRequestLogging();
 app.UseForwardedHeaders();
 app.UseSwagger();
 app.UseSwaggerUI(options =>
@@ -223,6 +240,14 @@ app.MapGet("/system/events", (string? type, string? sourceModule, int? page, int
     .WithDescription("Lista eventos gerados pelos fluxos integrados entre modulos, com filtros por tipo e modulo de origem. Use para auditoria funcional, suporte e rastreabilidade de operacoes.")
     .Produces(StatusCodes.Status200OK);
 
+app.MapGet("/system/metrics", (InMemoryObservabilityCollector observabilityCollector) =>
+    Results.Ok(ApiResponses.Ok(observabilityCollector.Snapshot())))
+    .WithSummary("Consulta metricas e sinais internos da API.")
+    .WithDescription("Retorna metricas operacionais em memoria sobre requests HTTP, falhas, operacoes de dominio e excecoes, servindo como base inicial de observabilidade e suporte.")
+    .Produces(StatusCodes.Status200OK);
+
 app.MapErpEndpoints();
 
 app.Run();
+
+public partial class Program;

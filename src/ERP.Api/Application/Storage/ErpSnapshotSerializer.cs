@@ -16,33 +16,273 @@ namespace ERP.Api.Application.Storage;
 internal static class ErpSnapshotSerializer
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly string[] SectionOrder =
+    [
+        "empresas",
+        "fornecedores",
+        "catalogo",
+        "clientes",
+        "depositos",
+        "identity",
+        "vendas",
+        "fiscal",
+        "estoque",
+        "compras",
+        "integracoes"
+    ];
 
     public static string Serialize(IErpStore store)
     {
-        var snapshot = new ErpSnapshot(
-            store.Empresas.Values.Select(ToSnapshot).ToArray(),
-            store.Fornecedores.Values.Select(ToSnapshot).ToArray(),
-            store.Produtos.Values.Select(ToSnapshot).ToArray(),
-            store.Clientes.Values.Select(ToSnapshot).ToArray(),
-            store.Depositos.Values.Select(ToSnapshot).ToArray(),
-            store.Usuarios.Values.Select(ToSnapshot).ToArray(),
-            store.PerfisAcesso.Values.Select(ToSnapshot).ToArray(),
-            store.Pedidos.Values.Select(ToSnapshot).ToArray(),
-            store.NotasFiscais.Values.Select(ToSnapshot).ToArray(),
-            store.Saldos.Values.Select(ToSnapshot).ToArray(),
-            store.MovimentosEstoque.Select(ToSnapshot).ToArray(),
-            store.ChavesImportadas.Select(item => new ChaveImportadaSnapshot(item.EmpresaId, item.ChaveAcesso)).ToArray(),
-            store.EventosWebhook.ToArray(),
-            store.ImportacoesNotaEntrada.Select(ToSnapshot).ToArray(),
-            store.WebhooksProcessados.Select(ToSnapshot).ToArray(),
-            store.SessoesAutenticacao.Select(ToSnapshot).ToArray(),
-            store.RefreshTokens.Select(ToSnapshot).ToArray(),
-            store.IntegrationEvents.Select(ToSnapshot).ToArray());
+        var envelope = new SectionedSnapshotEnvelope(
+            2,
+            SerializeSections(store));
+        return JsonSerializer.Serialize(envelope, JsonOptions);
+    }
 
-        return JsonSerializer.Serialize(snapshot, JsonOptions);
+    public static IReadOnlyDictionary<string, string> SerializeSections(IErpStore store)
+    {
+        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["empresas"] = JsonSerializer.Serialize(new EmpresasSectionSnapshot(
+                store.Empresas.Values.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["fornecedores"] = JsonSerializer.Serialize(new FornecedoresSectionSnapshot(
+                store.Fornecedores.Values.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["catalogo"] = JsonSerializer.Serialize(new CatalogoSectionSnapshot(
+                store.Produtos.Values.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["clientes"] = JsonSerializer.Serialize(new ClientesSectionSnapshot(
+                store.Clientes.Values.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["depositos"] = JsonSerializer.Serialize(new DepositosSectionSnapshot(
+                store.Depositos.Values.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["identity"] = JsonSerializer.Serialize(new IdentitySectionSnapshot(
+                store.Usuarios.Values.Select(ToSnapshot).ToArray(),
+                store.PerfisAcesso.Values.Select(ToSnapshot).ToArray(),
+                store.SessoesAutenticacao.Select(ToSnapshot).ToArray(),
+                store.RefreshTokens.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["vendas"] = JsonSerializer.Serialize(new VendasSectionSnapshot(
+                store.Pedidos.Values.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["fiscal"] = JsonSerializer.Serialize(new FiscalSectionSnapshot(
+                store.NotasFiscais.Values.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["estoque"] = JsonSerializer.Serialize(new EstoqueSectionSnapshot(
+                store.Saldos.Values.Select(ToSnapshot).ToArray(),
+                store.MovimentosEstoque.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["compras"] = JsonSerializer.Serialize(new ComprasSectionSnapshot(
+                store.ChavesImportadas.Select(item => new ChaveImportadaSnapshot(item.EmpresaId, item.ChaveAcesso)).ToArray(),
+                store.ImportacoesNotaEntrada.Select(ToSnapshot).ToArray()), JsonOptions),
+            ["integracoes"] = JsonSerializer.Serialize(new IntegracoesSectionSnapshot(
+                store.EventosWebhook.ToArray(),
+                store.WebhooksProcessados.Select(ToSnapshot).ToArray(),
+                store.IntegrationEvents.Select(ToSnapshot).ToArray()), JsonOptions)
+        };
     }
 
     public static void Load(IErpStore store, string json)
+    {
+        var envelope = JsonSerializer.Deserialize<SectionedSnapshotEnvelope>(json, JsonOptions);
+        if (envelope?.Sections is { Count: > 0 })
+        {
+            LoadSections(store, envelope.Sections);
+            return;
+        }
+
+        LoadLegacySnapshot(store, json);
+    }
+
+    public static void LoadSections(IErpStore store, IReadOnlyDictionary<string, string> sections)
+    {
+        ClearStore(store);
+
+        if (sections.TryGetValue("default", out var legacyPayload))
+        {
+            LoadLegacySnapshot(store, legacyPayload);
+            return;
+        }
+
+        if (sections.TryGetValue("empresas", out var empresasJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<EmpresasSectionSnapshot>(empresasJson, JsonOptions);
+            foreach (var empresaSnapshot in snapshot?.Empresas ?? Array.Empty<EmpresaSnapshot>())
+            {
+                var empresa = RestoreEmpresa(empresaSnapshot);
+                store.Empresas[empresa.Id] = empresa;
+            }
+        }
+
+        if (sections.TryGetValue("fornecedores", out var fornecedoresJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<FornecedoresSectionSnapshot>(fornecedoresJson, JsonOptions);
+            foreach (var fornecedorSnapshot in snapshot?.Fornecedores ?? Array.Empty<FornecedorSnapshot>())
+            {
+                var fornecedor = RestoreFornecedor(fornecedorSnapshot);
+                store.Fornecedores[fornecedor.Id] = fornecedor;
+            }
+        }
+
+        if (sections.TryGetValue("catalogo", out var catalogoJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<CatalogoSectionSnapshot>(catalogoJson, JsonOptions);
+            foreach (var produtoSnapshot in snapshot?.Produtos ?? Array.Empty<ProdutoSnapshot>())
+            {
+                var produto = RestoreProduto(produtoSnapshot);
+                store.Produtos[produto.Id] = produto;
+            }
+        }
+
+        if (sections.TryGetValue("clientes", out var clientesJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<ClientesSectionSnapshot>(clientesJson, JsonOptions);
+            foreach (var clienteSnapshot in snapshot?.Clientes ?? Array.Empty<ClienteSnapshot>())
+            {
+                var cliente = RestoreCliente(clienteSnapshot);
+                store.Clientes[cliente.Id] = cliente;
+            }
+        }
+
+        if (sections.TryGetValue("depositos", out var depositosJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<DepositosSectionSnapshot>(depositosJson, JsonOptions);
+            foreach (var depositoSnapshot in snapshot?.Depositos ?? Array.Empty<DepositoSnapshot>())
+            {
+                var deposito = RestoreDeposito(depositoSnapshot);
+                store.Depositos[deposito.Id] = deposito;
+            }
+        }
+
+        if (sections.TryGetValue("identity", out var identityJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<IdentitySectionSnapshot>(identityJson, JsonOptions);
+            foreach (var usuarioSnapshot in snapshot?.Usuarios ?? Array.Empty<UsuarioSnapshot>())
+            {
+                var usuario = RestoreUsuario(usuarioSnapshot);
+                store.Usuarios[usuario.Id] = usuario;
+            }
+
+            foreach (var perfilSnapshot in snapshot?.PerfisAcesso ?? Array.Empty<PerfilAcessoSnapshot>())
+            {
+                var perfilAcesso = RestorePerfilAcesso(perfilSnapshot);
+                store.PerfisAcesso[perfilAcesso.Id] = perfilAcesso;
+            }
+
+            foreach (var sessao in snapshot?.SessoesAutenticacao ?? Array.Empty<SessaoAutenticacaoSnapshot>())
+            {
+                store.SessoesAutenticacao.Add(new SessaoAutenticacaoRegistro(
+                    sessao.Token,
+                    sessao.UsuarioId,
+                    sessao.EmpresaId,
+                    sessao.Email,
+                    sessao.CriadaEm,
+                    sessao.ExpiraEm));
+            }
+
+            foreach (var refreshToken in snapshot?.RefreshTokens ?? Array.Empty<RefreshTokenSnapshot>())
+            {
+                store.RefreshTokens.Add(new RefreshTokenRegistro(
+                    refreshToken.Token,
+                    refreshToken.SessionToken,
+                    refreshToken.UsuarioId,
+                    refreshToken.CriadoEm,
+                    refreshToken.ExpiraEm));
+            }
+        }
+
+        if (sections.TryGetValue("vendas", out var vendasJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<VendasSectionSnapshot>(vendasJson, JsonOptions);
+            foreach (var pedidoSnapshot in snapshot?.Pedidos ?? Array.Empty<PedidoSnapshot>())
+            {
+                var pedido = RestorePedido(pedidoSnapshot);
+                store.Pedidos[pedido.Id] = pedido;
+            }
+        }
+
+        if (sections.TryGetValue("fiscal", out var fiscalJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<FiscalSectionSnapshot>(fiscalJson, JsonOptions);
+            foreach (var notaSnapshot in snapshot?.NotasFiscais ?? Array.Empty<NotaFiscalSnapshot>())
+            {
+                var nota = RestoreNotaFiscal(notaSnapshot);
+                store.NotasFiscais[nota.Id] = nota;
+            }
+        }
+
+        if (sections.TryGetValue("estoque", out var estoqueJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<EstoqueSectionSnapshot>(estoqueJson, JsonOptions);
+            foreach (var saldoSnapshot in snapshot?.Saldos ?? Array.Empty<SaldoSnapshot>())
+            {
+                var saldo = RestoreSaldo(saldoSnapshot);
+                store.Saldos[(saldo.ProdutoId, saldo.DepositoId)] = saldo;
+            }
+
+            foreach (var movimento in snapshot?.MovimentosEstoque ?? Array.Empty<MovimentoEstoqueSnapshot>())
+            {
+                store.MovimentosEstoque.Add(new MovimentoEstoque(
+                    movimento.ProdutoId,
+                    movimento.DepositoId,
+                    Enum.Parse<TipoMovimentoEstoque>(movimento.Tipo),
+                    movimento.Quantidade,
+                    movimento.Motivo,
+                    movimento.DocumentoOrigem,
+                    movimento.SaldoAnterior,
+                    movimento.SaldoPosterior,
+                    movimento.DataHora));
+            }
+        }
+
+        if (sections.TryGetValue("compras", out var comprasJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<ComprasSectionSnapshot>(comprasJson, JsonOptions);
+            foreach (var chave in snapshot?.ChavesImportadas ?? Array.Empty<ChaveImportadaSnapshot>())
+            {
+                store.ChavesImportadas.Add((chave.EmpresaId, chave.ChaveAcesso));
+            }
+
+            foreach (var importacao in snapshot?.ImportacoesNotaEntrada ?? Array.Empty<ImportacaoNotaEntradaSnapshot>())
+            {
+                store.ImportacoesNotaEntrada.Add(new ImportacaoNotaEntradaRegistro(
+                    importacao.EmpresaId,
+                    importacao.FornecedorId ?? Guid.Empty,
+                    importacao.DepositoId,
+                    importacao.ChaveAcesso,
+                    importacao.ImportadaComSucesso,
+                    importacao.ItensExternos,
+                    importacao.ItensPendentesConciliacao,
+                    importacao.MovimentosGerados,
+                    importacao.ProcessadaEm));
+            }
+        }
+
+        if (sections.TryGetValue("integracoes", out var integracoesJson))
+        {
+            var snapshot = JsonSerializer.Deserialize<IntegracoesSectionSnapshot>(integracoesJson, JsonOptions);
+            foreach (var eventoId in snapshot?.EventosWebhook ?? Array.Empty<string>())
+            {
+                store.EventosWebhook.Add(eventoId);
+            }
+
+            foreach (var webhook in snapshot?.WebhooksProcessados ?? Array.Empty<WebhookProcessadoSnapshot>())
+            {
+                store.WebhooksProcessados.Add(new WebhookProcessadoRegistro(
+                    webhook.EventoId,
+                    webhook.Origem,
+                    webhook.Status,
+                    webhook.Mensagem,
+                    webhook.ProcessadoEm));
+            }
+
+            foreach (var integrationEvent in snapshot?.IntegrationEvents ?? Array.Empty<IntegrationEventSnapshot>())
+            {
+                store.IntegrationEvents.Add(new IntegrationEvent(
+                    integrationEvent.Id,
+                    integrationEvent.Type,
+                    integrationEvent.SourceModule,
+                    integrationEvent.AggregateId,
+                    integrationEvent.Description,
+                    integrationEvent.OccurredAt));
+            }
+        }
+    }
+
+    private static void LoadLegacySnapshot(IErpStore store, string json)
     {
         var snapshot = JsonSerializer.Deserialize<ErpSnapshot>(json, JsonOptions);
         if (snapshot is null)
@@ -50,25 +290,7 @@ internal static class ErpSnapshotSerializer
             return;
         }
 
-        store.Empresas.Clear();
-        store.Fornecedores.Clear();
-        store.Produtos.Clear();
-        store.Clientes.Clear();
-        store.Depositos.Clear();
-        store.Usuarios.Clear();
-        store.PerfisAcesso.Clear();
-        store.Pedidos.Clear();
-        store.NotasFiscais.Clear();
-        store.Saldos.Clear();
-        store.MovimentosEstoque.Clear();
-        store.ChavesImportadas.Clear();
-        store.EventosWebhook.Clear();
-        store.ImportacoesNotaEntrada.Clear();
-        store.WebhooksProcessados.Clear();
-        store.SessoesAutenticacao.Clear();
-        store.RefreshTokens.Clear();
-        store.IntegrationEvents.Clear();
-
+        ClearStore(store);
         foreach (var empresaSnapshot in snapshot.Empresas ?? Array.Empty<EmpresaSnapshot>())
         {
             var empresa = RestoreEmpresa(empresaSnapshot);
@@ -208,6 +430,28 @@ internal static class ErpSnapshotSerializer
                 integrationEvent.Description,
                 integrationEvent.OccurredAt));
         }
+    }
+
+    private static void ClearStore(IErpStore store)
+    {
+        store.Empresas.Clear();
+        store.Fornecedores.Clear();
+        store.Produtos.Clear();
+        store.Clientes.Clear();
+        store.Depositos.Clear();
+        store.Usuarios.Clear();
+        store.PerfisAcesso.Clear();
+        store.Pedidos.Clear();
+        store.NotasFiscais.Clear();
+        store.Saldos.Clear();
+        store.MovimentosEstoque.Clear();
+        store.ChavesImportadas.Clear();
+        store.EventosWebhook.Clear();
+        store.ImportacoesNotaEntrada.Clear();
+        store.WebhooksProcessados.Clear();
+        store.SessoesAutenticacao.Clear();
+        store.RefreshTokens.Clear();
+        store.IntegrationEvents.Clear();
     }
 
     private static EmpresaSnapshot ToSnapshot(Empresa empresa)
@@ -593,6 +837,50 @@ internal static class ErpSnapshotSerializer
         var field = typeof(T).GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
         field?.SetValue(instance, value);
     }
+
+    private sealed record SectionedSnapshotEnvelope(
+        int Version,
+        IReadOnlyDictionary<string, string> Sections);
+
+    private sealed record EmpresasSectionSnapshot(
+        IReadOnlyCollection<EmpresaSnapshot> Empresas);
+
+    private sealed record FornecedoresSectionSnapshot(
+        IReadOnlyCollection<FornecedorSnapshot> Fornecedores);
+
+    private sealed record CatalogoSectionSnapshot(
+        IReadOnlyCollection<ProdutoSnapshot> Produtos);
+
+    private sealed record ClientesSectionSnapshot(
+        IReadOnlyCollection<ClienteSnapshot> Clientes);
+
+    private sealed record DepositosSectionSnapshot(
+        IReadOnlyCollection<DepositoSnapshot> Depositos);
+
+    private sealed record IdentitySectionSnapshot(
+        IReadOnlyCollection<UsuarioSnapshot> Usuarios,
+        IReadOnlyCollection<PerfilAcessoSnapshot> PerfisAcesso,
+        IReadOnlyCollection<SessaoAutenticacaoSnapshot> SessoesAutenticacao,
+        IReadOnlyCollection<RefreshTokenSnapshot> RefreshTokens);
+
+    private sealed record VendasSectionSnapshot(
+        IReadOnlyCollection<PedidoSnapshot> Pedidos);
+
+    private sealed record FiscalSectionSnapshot(
+        IReadOnlyCollection<NotaFiscalSnapshot> NotasFiscais);
+
+    private sealed record EstoqueSectionSnapshot(
+        IReadOnlyCollection<SaldoSnapshot> Saldos,
+        IReadOnlyCollection<MovimentoEstoqueSnapshot> MovimentosEstoque);
+
+    private sealed record ComprasSectionSnapshot(
+        IReadOnlyCollection<ChaveImportadaSnapshot> ChavesImportadas,
+        IReadOnlyCollection<ImportacaoNotaEntradaSnapshot> ImportacoesNotaEntrada);
+
+    private sealed record IntegracoesSectionSnapshot(
+        IReadOnlyCollection<string> EventosWebhook,
+        IReadOnlyCollection<WebhookProcessadoSnapshot> WebhooksProcessados,
+        IReadOnlyCollection<IntegrationEventSnapshot> IntegrationEvents);
 
     private sealed record ErpSnapshot(
         IReadOnlyCollection<EmpresaSnapshot> Empresas,

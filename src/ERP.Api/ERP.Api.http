@@ -70,6 +70,26 @@ Accept: application/json
 
 ###
 
+GET {{ERP.Api_HostAddress}}/empresas/{{empresaId}}
+Accept: application/json
+
+###
+
+PATCH {{ERP.Api_HostAddress}}/empresas/{{empresaId}}
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "nomeFantasia": "Empresa Demo Parcial"
+}
+
+###
+
+DELETE {{ERP.Api_HostAddress}}/empresas/{{empresaCadastroId}}
+X-Session-Token: {{sessionToken}}
+
+###
+
 POST {{ERP.Api_HostAddress}}/catalogo/produtos
 Content-Type: application/json
 X-Session-Token: {{sessionToken}}
@@ -93,6 +113,11 @@ Accept: application/json
 
 ###
 
+GET {{ERP.Api_HostAddress}}/catalogo/produtos/{{produtoId}}
+Accept: application/json
+
+###
+
 POST {{ERP.Api_HostAddress}}/clientes
 Content-Type: application/json
 X-Session-Token: {{sessionToken}}
@@ -108,6 +133,37 @@ X-Session-Token: {{sessionToken}}
 
 GET {{ERP.Api_HostAddress}}/clientes?empresaId={{empresaId}}&status=Ativo&page=1&pageSize=20&termo=Cliente
 Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/clientes/{{clienteId}}
+Accept: application/json
+
+###
+
+PUT {{ERP.Api_HostAddress}}/clientes/{{clienteId}}
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "nome": "Cliente Teste Atualizado",
+  "email": "cliente.atualizado@teste.com"
+}
+
+###
+
+PATCH {{ERP.Api_HostAddress}}/clientes/{{clienteId}}
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "nome": "Cliente Ajustado Parcialmente"
+}
+
+###
+
+DELETE {{ERP.Api_HostAddress}}/clientes/{{clienteCadastroId}}
+X-Session-Token: {{sessionToken}}
 
 ###
 
@@ -129,6 +185,37 @@ Accept: application/json
 
 ###
 
+GET {{ERP.Api_HostAddress}}/fornecedores/{{fornecedorId}}
+Accept: application/json
+
+###
+
+PUT {{ERP.Api_HostAddress}}/fornecedores/{{fornecedorId}}
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "nome": "Fornecedor Teste Atualizado",
+  "email": "fornecedor.atualizado@teste.com"
+}
+
+###
+
+PATCH {{ERP.Api_HostAddress}}/fornecedores/{{fornecedorId}}
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "nome": "Fornecedor Ajustado Parcialmente"
+}
+
+###
+
+DELETE {{ERP.Api_HostAddress}}/fornecedores/{{fornecedorCadastroId}}
+X-Session-Token: {{sessionToken}}
+
+###
+
 POST {{ERP.Api_HostAddress}}/depositos
 Content-Type: application/json
 X-Session-Token: {{sessionToken}}
@@ -146,7 +233,42 @@ Accept: application/json
 
 ###
 
+GET {{ERP.Api_HostAddress}}/depositos/{{depositoId}}
+Accept: application/json
+
+###
+
+PUT {{ERP.Api_HostAddress}}/depositos/{{depositoId}}
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "nome": "Deposito Principal Atualizado"
+}
+
+###
+
+PATCH {{ERP.Api_HostAddress}}/depositos/{{depositoId}}
+Content-Type: application/json
+X-Session-Token: {{sessionToken}}
+
+{
+  "nome": "Deposito Ajustado Parcialmente"
+}
+
+###
+
+DELETE {{ERP.Api_HostAddress}}/depositos/{{depositoCadastroId}}
+X-Session-Token: {{sessionToken}}
+
+###
+
 GET {{ERP.Api_HostAddress}}/identity/usuarios?status=Ativo&page=1&pageSize=20&termo=usuario
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/identity/usuarios/{{usuarioCadastroId}}
 Accept: application/json
 
 ###
@@ -162,6 +284,11 @@ Accept: application/json
 ###
 
 GET {{ERP.Api_HostAddress}}/identity/perfis?empresaId={{empresaId}}&page=1&pageSize=20&termo=estoque
+Accept: application/json
+
+###
+
+GET {{ERP.Api_HostAddress}}/identity/perfis/dddddddd-dddd-dddd-dddd-dddddddddddd
 Accept: application/json
 
 ###
@@ -280,6 +407,29 @@ Authorization: Bearer {{accessToken}}
 
 ###
 
+PUT {{ERP.Api_HostAddress}}/identity/perfis/dddddddd-dddd-dddd-dddd-dddddddddddd
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "nome": "Operador de Estoque Senior",
+  "permissoes": [
+    "ESTOQUE_MANAGE"
+  ]
+}
+
+###
+
+PATCH {{ERP.Api_HostAddress}}/identity/perfis/dddddddd-dddd-dddd-dddd-dddddddddddd
+Content-Type: application/json
+Authorization: Bearer {{accessToken}}
+
+{
+  "nome": "Operador de Estoque Parcial"
+}
+
+###
+
 POST {{ERP.Api_HostAddress}}/identity/usuarios/{{usuarioCadastroId}}/perfis
 Content-Type: application/json
 Authorization: Bearer {{accessToken}}
@@ -310,6 +460,11 @@ X-Session-Token: {{sessionToken}}
 {
   "clienteId": "{{clienteId}}"
 }
+
+###
+
+GET {{ERP.Api_HostAddress}}/vendas/pedidos/{{pedidoId}}
+Accept: application/json
 
 ###
 
@@ -426,6 +581,11 @@ Accept: application/json
 
 ###
 
+GET {{ERP.Api_HostAddress}}/fiscal/notas/{{notaId}}
+Accept: application/json
+
+###
+
 POST {{ERP.Api_HostAddress}}/fiscal/notas
 Content-Type: application/json
 X-Session-Token: {{sessionToken}}
@@ -458,12 +618,17 @@ X-Session-Token: {{sessionToken}}
 
 POST {{ERP.Api_HostAddress}}/integracoes/webhooks
 Content-Type: application/json
+X-Webhook-Signature: {{webhookSignature}}
 
 {
   "eventoId": "evt-1",
   "origem": "marketplace",
   "payload": "{\"pedido\":\"123\"}"
 }
+
+# Assinatura esperada: HMAC-SHA256 em hexadecimal minusculo do texto
+# evt-1:marketplace:{"pedido":"123"}
+# usando o segredo configurado em WebhookSecurity:SharedSecret.
 
 ###
 

@@ -15,10 +15,14 @@ namespace ERP.Api.Application.Storage;
 public sealed class JsonFileErpStore : IErpStore
 {
     private readonly string _filePath;
+    private readonly string _sectionsDirectory;
 
     public JsonFileErpStore(IOptions<StorageOptions> options)
     {
         _filePath = Path.GetFullPath(options.Value.FilePath);
+        _sectionsDirectory = Path.Combine(
+            Path.GetDirectoryName(_filePath) ?? Directory.GetCurrentDirectory(),
+            $"{Path.GetFileNameWithoutExtension(_filePath)}.sections");
         Load();
     }
 
@@ -52,12 +56,38 @@ public sealed class JsonFileErpStore : IErpStore
                 Directory.CreateDirectory(directory);
             }
 
+            Directory.CreateDirectory(_sectionsDirectory);
+            foreach (var section in Directory.EnumerateFiles(_sectionsDirectory, "*.json"))
+            {
+                File.Delete(section);
+            }
+
+            foreach (var (sectionName, payload) in ErpSnapshotSerializer.SerializeSections(this))
+            {
+                var sectionPath = Path.Combine(_sectionsDirectory, $"{sectionName}.json");
+                File.WriteAllText(sectionPath, payload);
+            }
+
             File.WriteAllText(_filePath, ErpSnapshotSerializer.Serialize(this));
         }
     }
 
     private void Load()
     {
+        if (Directory.Exists(_sectionsDirectory))
+        {
+            var sections = Directory.EnumerateFiles(_sectionsDirectory, "*.json")
+                .ToDictionary(
+                    file => Path.GetFileNameWithoutExtension(file),
+                    File.ReadAllText,
+                    StringComparer.OrdinalIgnoreCase);
+            if (sections.Count > 0)
+            {
+                ErpSnapshotSerializer.LoadSections(this, sections);
+                return;
+            }
+        }
+
         if (!File.Exists(_filePath))
         {
             return;

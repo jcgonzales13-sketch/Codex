@@ -56,20 +56,23 @@ public sealed class SqlServerErpStore : IErpStore
             using var connection = new SqlConnection(_connectionString);
             connection.Open();
 
-            var sql = $"""
-                MERGE [{_schema}].[{_table}] AS target
-                USING (SELECT @StateKey AS StateKey, @Payload AS Payload, SYSUTCDATETIME() AS UpdatedAt) AS source
-                ON target.StateKey = source.StateKey
-                WHEN MATCHED THEN
-                    UPDATE SET Payload = source.Payload, UpdatedAt = source.UpdatedAt
-                WHEN NOT MATCHED THEN
-                    INSERT (StateKey, Payload, UpdatedAt) VALUES (source.StateKey, source.Payload, source.UpdatedAt);
-                """;
+            foreach (var (sectionName, payload) in ErpSnapshotSerializer.SerializeSections(this))
+            {
+                var sql = $"""
+                    MERGE [{_schema}].[{_table}] AS target
+                    USING (SELECT @StateKey AS StateKey, @Payload AS Payload, SYSUTCDATETIME() AS UpdatedAt) AS source
+                    ON target.StateKey = source.StateKey
+                    WHEN MATCHED THEN
+                        UPDATE SET Payload = source.Payload, UpdatedAt = source.UpdatedAt
+                    WHEN NOT MATCHED THEN
+                        INSERT (StateKey, Payload, UpdatedAt) VALUES (source.StateKey, source.Payload, source.UpdatedAt);
+                    """;
 
-            using var command = new SqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@StateKey", "default");
-            command.Parameters.AddWithValue("@Payload", ErpSnapshotSerializer.Serialize(this));
-            command.ExecuteNonQuery();
+                using var command = new SqlCommand(sql, connection);
+                command.Parameters.AddWithValue("@StateKey", sectionName);
+                command.Parameters.AddWithValue("@Payload", payload);
+                command.ExecuteNonQuery();
+            }
         }
     }
 
@@ -78,15 +81,27 @@ public sealed class SqlServerErpStore : IErpStore
         using var connection = new SqlConnection(_connectionString);
         connection.Open();
 
-        var sql = $"SELECT Payload FROM [{_schema}].[{_table}] WHERE StateKey = @StateKey";
+        var sql = $"SELECT StateKey, Payload FROM [{_schema}].[{_table}]";
         using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@StateKey", "default");
-
-        var payload = command.ExecuteScalar() as string;
-        if (!string.IsNullOrWhiteSpace(payload))
+        using var reader = command.ExecuteReader();
+        var sections = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
         {
-            ErpSnapshotSerializer.Load(this, payload);
+            sections[reader.GetString(0)] = reader.GetString(1);
         }
+
+        if (sections.Count == 0)
+        {
+            return;
+        }
+
+        if (sections.Count == 1 && sections.TryGetValue("default", out var legacyPayload))
+        {
+            ErpSnapshotSerializer.Load(this, legacyPayload);
+            return;
+        }
+
+        ErpSnapshotSerializer.LoadSections(this, sections);
     }
 
     private void EnsureTable()
