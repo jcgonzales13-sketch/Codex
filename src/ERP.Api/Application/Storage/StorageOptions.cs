@@ -9,4 +9,5 @@ public sealed class StorageOptions
     public string? ConnectionString { get; set; }
     public string Schema { get; set; } = "dbo";
     public string StateTable { get; set; } = "ErpState";
+    public string MigrationsTable { get; set; } = "ErpMigrations";
 }

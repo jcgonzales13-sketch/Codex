@@ -27,4 +27,11 @@
     <ProjectReference Include="..\ERP.Modules.Vendas\ERP.Modules.Vendas.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Application\Storage\Migrations\SqlServer\*.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Migrations\SqlServer\%(Filename)%(Extension)</TargetPath>
+    </Content>
+  </ItemGroup>
+
 </Project>

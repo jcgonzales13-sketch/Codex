@@ -51,6 +51,43 @@ public sealed class HealthAndIdentityIntegrationTests : IClassFixture<ErpApiFact
     }
 
     [Fact]
+    public async Task Deve_expor_metricas_e_modulos_na_superficie_versionada_v1()
+    {
+        using var client = _factory.CreateClient();
+
+        var modulesResponse = await client.GetAsync("/api/v1/modules");
+        var metricsResponse = await client.GetAsync("/api/v1/system/metrics");
+
+        modulesResponse.EnsureSuccessStatusCode();
+        metricsResponse.EnsureSuccessStatusCode();
+
+        var modulesEnvelope = await modulesResponse.Content.ReadFromJsonAsync<ApiEnvelope<JsonElement>>(JsonOptions);
+        var metricsEnvelope = await metricsResponse.Content.ReadFromJsonAsync<ApiEnvelope<JsonElement>>(JsonOptions);
+
+        Assert.NotNull(modulesEnvelope);
+        Assert.NotNull(metricsEnvelope);
+        Assert.True(modulesEnvelope!.Data.GetArrayLength() >= 1);
+        Assert.True(metricsEnvelope!.Data.GetProperty("totalHttpRequests").GetInt64() >= 2);
+    }
+
+    [Fact]
+    public async Task Deve_expor_headers_de_paginacao_na_consulta_de_clientes()
+    {
+        using var client = _factory.CreateClient();
+        var seeded = SeedCompanyAndUser();
+        var sessionToken = await RealizarLogin(client, seeded);
+        _ = await CriarCliente(client, seeded.EmpresaId, sessionToken);
+
+        var response = await client.GetAsync($"/clientes?empresaId={seeded.EmpresaId}&page=1&pageSize=10");
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("1", response.Headers.GetValues("X-Page").Single());
+        Assert.Equal("10", response.Headers.GetValues("X-Page-Size").Single());
+        Assert.True(int.Parse(response.Headers.GetValues("X-Total-Count").Single()) >= 1);
+        Assert.True(int.Parse(response.Headers.GetValues("X-Total-Pages").Single()) >= 1);
+    }
+
+    [Fact]
     public async Task Deve_atualizar_cliente_via_put_restful()
     {
         using var client = _factory.CreateClient();
@@ -114,6 +151,23 @@ public sealed class HealthAndIdentityIntegrationTests : IClassFixture<ErpApiFact
         var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<JsonElement>>(JsonOptions);
         Assert.NotNull(envelope);
         Assert.Equal(clienteId, envelope!.Data.GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task Deve_consultar_usuario_autenticado_via_identity_me()
+    {
+        using var client = _factory.CreateClient();
+        var seeded = SeedCompanyAndUser();
+        var sessionToken = await RealizarLogin(client, seeded);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/identity/me");
+        request.Headers.Add("X-Session-Token", sessionToken);
+
+        var response = await client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<JsonElement>>(JsonOptions);
+        Assert.NotNull(envelope);
+        Assert.Equal(seeded.Email, envelope!.Data.GetProperty("usuario").GetProperty("email").GetString());
     }
 
     [Fact]

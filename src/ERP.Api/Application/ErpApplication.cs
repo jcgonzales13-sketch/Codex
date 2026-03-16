@@ -30,7 +30,17 @@ public sealed class ErpApplicationService(
     InMemoryObservabilityCollector? observabilityCollector = null,
     IEmpresaRepository? empresaRepository = null,
     IClienteRepository? clienteRepository = null,
-    IFornecedorRepository? fornecedorRepository = null)
+    IFornecedorRepository? fornecedorRepository = null,
+    IProdutoRepository? produtoRepository = null,
+    IDepositoRepository? depositoRepository = null,
+    IUsuarioRepository? usuarioRepository = null,
+    IPerfilAcessoRepository? perfilAcessoRepository = null,
+    INotaEntradaRepository? notaEntradaRepository = null,
+    IEventoIntegracaoRepository? eventoIntegracaoRepository = null,
+    ISaldoEstoqueStoreRepository? saldoEstoqueRepository = null,
+    IMovimentoEstoqueStoreRepository? movimentoEstoqueRepository = null,
+    IPedidoVendaStoreRepository? pedidoVendaRepository = null,
+    INotaFiscalStoreRepository? notaFiscalRepository = null)
 {
     public PagedResponse<EmpresaResponse> ConsultarEmpresas(ConsultarEmpresasRequest request)
     {
@@ -190,8 +200,7 @@ public sealed class ErpApplicationService(
             ApplicationGuard.AgainstNegative(request.PrecoVenda, "PrecoVenda");
             ApplicationGuard.AgainstNegative(request.Custo, "Custo");
 
-            var repository = new ProdutoRepository(store);
-            var service = new CadastroProdutoService(repository);
+            var service = new CadastroProdutoService(produtoRepository ?? new ProdutoStoreRepository(store));
             var produto = service.Cadastrar(request.EmpresaId, request.CodigoInterno, request.Sku, request.Descricao, request.Tipo, request.PrecoVenda, request.Custo, request.Ncm, request.Origem);
             AddIntegrationEvent("catalogo.produto_cadastrado", "Catalogo", produto.Id.ToString(), $"Produto {produto.Sku} cadastrado.");
             store.Persist();
@@ -503,8 +512,7 @@ public sealed class ErpApplicationService(
             _ = GetEmpresaOperacional(request.EmpresaId);
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Codigo, "Codigo");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
-            var repository = new DepositoRepository(store);
-            var service = new CadastroDepositoService(repository);
+            var service = new CadastroDepositoService(depositoRepository ?? new DepositoStoreRepository(store));
             var deposito = service.Cadastrar(request.EmpresaId, request.Codigo, request.Nome);
             AddIntegrationEvent("depositos.deposito_cadastrado", "Depositos", deposito.Id.ToString(), $"Deposito {deposito.Codigo} cadastrado.");
             store.Persist();
@@ -645,8 +653,7 @@ public sealed class ErpApplicationService(
             ApplicationGuard.AgainstEmptyGuid(request.EmpresaId, "EmpresaId");
             _ = GetEmpresaOperacional(request.EmpresaId);
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
-            var repository = new PerfilAcessoRepository(store);
-            var service = new CadastroPerfilAcessoService(repository);
+            var service = new CadastroPerfilAcessoService(perfilAcessoRepository ?? new PerfilAcessoStoreRepository(store));
             var perfilAcesso = service.Cadastrar(request.EmpresaId, request.Nome, NormalizeKnownPermissions(request.Permissoes));
             AddIntegrationEvent("identity.perfil_cadastrado", "Identity", perfilAcesso.Id.ToString(), $"Perfil de acesso {perfilAcesso.Nome} cadastrado.");
             store.Persist();
@@ -698,8 +705,7 @@ public sealed class ErpApplicationService(
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Email, "Email");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Nome, "Nome");
             var isBootstrap = PermiteBootstrapIdentity(request.EmpresaId);
-            var repository = new UsuarioRepository(store);
-            var service = new CadastroUsuarioService(repository);
+            var service = new CadastroUsuarioService(usuarioRepository ?? new UsuarioStoreRepository(store));
             var usuario = service.Cadastrar(request.EmpresaId, request.Email, request.Nome);
             if (isBootstrap)
             {
@@ -980,7 +986,7 @@ public sealed class ErpApplicationService(
     {
         lock (store.SyncRoot)
         {
-            return store.Saldos.Values.Select(MapSaldo).ToArray();
+            return (saldoEstoqueRepository ?? new SaldoEstoqueStoreRepository(store)).List().Select(MapSaldo).ToArray();
         }
     }
 
@@ -988,7 +994,7 @@ public sealed class ErpApplicationService(
     {
         lock (store.SyncRoot)
         {
-            var query = store.Saldos.Values.AsEnumerable();
+            var query = (saldoEstoqueRepository ?? new SaldoEstoqueStoreRepository(store)).List().AsEnumerable();
             if (request.ProdutoId is not null)
             {
                 query = query.Where(item => item.ProdutoId == request.ProdutoId);
@@ -1007,7 +1013,7 @@ public sealed class ErpApplicationService(
     {
         lock (store.SyncRoot)
         {
-            return ToPagedResponse(store.MovimentosEstoque
+            return ToPagedResponse((movimentoEstoqueRepository ?? new MovimentoEstoqueStoreRepository(store)).List()
                 .Where(item => request.ProdutoId is null || item.ProdutoId == request.ProdutoId)
                 .Where(item => request.DepositoId is null || item.DepositoId == request.DepositoId)
                 .OrderByDescending(item => item.DataHora)
@@ -1019,7 +1025,7 @@ public sealed class ErpApplicationService(
     {
         lock (store.SyncRoot)
         {
-            var query = store.MovimentosEstoque
+            var query = (movimentoEstoqueRepository ?? new MovimentoEstoqueStoreRepository(store)).List()
                 .Where(item => request.ProdutoId is null || item.ProdutoId == request.ProdutoId)
                 .Where(item => request.DepositoId is null || item.DepositoId == request.DepositoId)
                 .OrderByDescending(item => item.DataHora)
@@ -1038,14 +1044,13 @@ public sealed class ErpApplicationService(
             var produto = GetProduto(request.ProdutoId);
             var deposito = GetDepositoOperacional(request.DepositoId);
             EnsureSameEmpresa(produto.EmpresaId, deposito.EmpresaId, "Produto e deposito devem pertencer a mesma empresa.");
-            var key = (request.ProdutoId, request.DepositoId);
-            if (store.Saldos.ContainsKey(key))
+            if ((saldoEstoqueRepository ?? new SaldoEstoqueStoreRepository(store)).Exists(request.ProdutoId, request.DepositoId))
             {
                 throw new DomainException("Saldo de estoque ja cadastrado para produto e deposito.");
             }
 
             var saldo = new SaldoEstoque(request.ProdutoId, request.DepositoId, request.SaldoInicial, request.PermiteSaldoNegativo);
-            store.Saldos[key] = saldo;
+            (saldoEstoqueRepository ?? new SaldoEstoqueStoreRepository(store)).Save(saldo);
             store.Persist();
             return MapSaldo(saldo);
         }
@@ -1138,7 +1143,7 @@ public sealed class ErpApplicationService(
     {
         lock (store.SyncRoot)
         {
-            return store.Pedidos.Values.Select(MapPedido).ToArray();
+            return (pedidoVendaRepository ?? new PedidoVendaStoreRepository(store)).List().Select(MapPedido).ToArray();
         }
     }
 
@@ -1146,7 +1151,7 @@ public sealed class ErpApplicationService(
     {
         lock (store.SyncRoot)
         {
-            var query = store.Pedidos.Values.AsEnumerable();
+            var query = (pedidoVendaRepository ?? new PedidoVendaStoreRepository(store)).List().AsEnumerable();
             if (!string.IsNullOrWhiteSpace(request.Status))
             {
                 query = query.Where(item => string.Equals(item.Status.ToString(), request.Status, StringComparison.OrdinalIgnoreCase));
@@ -1168,7 +1173,7 @@ public sealed class ErpApplicationService(
             ApplicationGuard.AgainstEmptyGuid(request.ClienteId, "ClienteId");
             var cliente = GetCliente(request.ClienteId);
             var pedido = new PedidoVenda(request.ClienteId);
-            store.Pedidos[pedido.Id] = pedido;
+            (pedidoVendaRepository ?? new PedidoVendaStoreRepository(store)).Add(pedido);
             store.Persist();
             LogMutation("Pedido criado", pedido.Id, cliente.EmpresaId, ("clienteId", cliente.Id));
             return MapPedido(pedido);
@@ -1235,8 +1240,8 @@ public sealed class ErpApplicationService(
                 {
                     var produto = GetProduto(produtoId);
                     EnsureSameEmpresa(cliente.EmpresaId, produto.EmpresaId, "Produto informado pertence a outra empresa do pedido.");
-                    var key = (produtoId, request.DepositoId);
-                    return store.Saldos.TryGetValue(key, out var saldo) && saldo.Disponivel >= quantidade;
+                    var saldo = (saldoEstoqueRepository ?? new SaldoEstoqueStoreRepository(store)).Find(produtoId, request.DepositoId);
+                    return saldo is not null && saldo.Disponivel >= quantidade;
                 });
 
                 foreach (var item in pedido.Itens)
@@ -1312,8 +1317,7 @@ public sealed class ErpApplicationService(
                 EnsureSameEmpresa(empresa.Id, deposito.EmpresaId, "Deposito informado pertence a outra empresa.");
                 ApplicationGuard.AgainstNullOrWhiteSpace(request.ChaveAcesso, "ChaveAcesso");
                 ApplicationGuard.AgainstEmptyCollection(request.ItensExternos, "ItensExternos");
-                var repository = new NotaEntradaRepository(store);
-                var service = new ImportacaoNotaEntradaService(repository);
+                var service = new ImportacaoNotaEntradaService(notaEntradaRepository ?? new NotaEntradaStoreRepository(store));
                 var resultado = service.Importar(
                     request.EmpresaId,
                     request.ChaveAcesso,
@@ -1404,7 +1408,7 @@ public sealed class ErpApplicationService(
     {
         lock (store.SyncRoot)
         {
-            return store.NotasFiscais.Values.Select(MapNotaFiscal).ToArray();
+            return (notaFiscalRepository ?? new NotaFiscalStoreRepository(store)).List().Select(MapNotaFiscal).ToArray();
         }
     }
 
@@ -1412,7 +1416,7 @@ public sealed class ErpApplicationService(
     {
         lock (store.SyncRoot)
         {
-            var query = store.NotasFiscais.Values.AsEnumerable();
+            var query = (notaFiscalRepository ?? new NotaFiscalStoreRepository(store)).List().AsEnumerable();
             if (!string.IsNullOrWhiteSpace(request.Status))
             {
                 query = query.Where(item => string.Equals(item.Status.ToString(), request.Status, StringComparison.OrdinalIgnoreCase));
@@ -1467,7 +1471,7 @@ public sealed class ErpApplicationService(
 
             var itens = request.Itens.Select(item => new ItemNotaFiscal(item.ProdutoId, item.Quantidade, item.Ncm, item.Cfop)).ToArray();
             var nota = new NotaFiscal(request.PedidoVendaId, request.ClienteId, itens);
-            store.NotasFiscais[nota.Id] = nota;
+            (notaFiscalRepository ?? new NotaFiscalStoreRepository(store)).Add(nota);
             store.Persist();
             return MapNotaFiscal(nota);
         }
@@ -1499,7 +1503,8 @@ public sealed class ErpApplicationService(
                     AddStockMovement(movimento);
                 }
 
-                if (store.Pedidos.TryGetValue(nota.PedidoVendaId, out var pedido) && pedido.Status == StatusPedidoVenda.Reservado)
+                var pedido = (pedidoVendaRepository ?? new PedidoVendaStoreRepository(store)).Find(nota.PedidoVendaId);
+                if (pedido is not null && pedido.Status == StatusPedidoVenda.Reservado)
                 {
                     pedido.Faturar();
                     AddIntegrationEvent("vendas.pedido_faturado", "Vendas", pedido.Id.ToString(), $"Pedido faturado pela nota {nota.Id}.");
@@ -1563,8 +1568,7 @@ public sealed class ErpApplicationService(
         {
             ApplicationGuard.AgainstNullOrWhiteSpace(request.EventoId, "EventoId");
             ApplicationGuard.AgainstNullOrWhiteSpace(request.Origem, "Origem");
-            var repository = new EventoIntegracaoRepository(store);
-            var service = new ProcessamentoWebhookService(repository);
+            var service = new ProcessamentoWebhookService(eventoIntegracaoRepository ?? new EventoIntegracaoStoreRepository(store));
             var resultado = service.Processar(new WebhookRecebido(request.EventoId, request.Origem, request.Payload));
             store.WebhooksProcessados.Add(new WebhookProcessadoRegistro(
                 request.EventoId,
@@ -1759,7 +1763,8 @@ public sealed class ErpApplicationService(
 
     private PedidoVenda GetPedido(Guid pedidoId)
     {
-        if (!store.Pedidos.TryGetValue(pedidoId, out var pedido))
+        var pedido = (pedidoVendaRepository ?? new PedidoVendaStoreRepository(store)).Find(pedidoId);
+        if (pedido is null)
         {
             throw new NotFoundException("Pedido de venda nao encontrado.");
         }
@@ -1769,7 +1774,8 @@ public sealed class ErpApplicationService(
 
     private NotaFiscal GetNotaFiscal(Guid notaFiscalId)
     {
-        if (!store.NotasFiscais.TryGetValue(notaFiscalId, out var nota))
+        var nota = (notaFiscalRepository ?? new NotaFiscalStoreRepository(store)).Find(notaFiscalId);
+        if (nota is null)
         {
             throw new NotFoundException("Nota fiscal nao encontrada.");
         }
@@ -1779,7 +1785,8 @@ public sealed class ErpApplicationService(
 
     private SaldoEstoque GetSaldo(Guid produtoId, Guid depositoId)
     {
-        if (!store.Saldos.TryGetValue((produtoId, depositoId), out var saldo))
+        var saldo = (saldoEstoqueRepository ?? new SaldoEstoqueStoreRepository(store)).Find(produtoId, depositoId);
+        if (saldo is null)
         {
             throw new NotFoundException("Saldo de estoque nao encontrado para produto e deposito informados.");
         }
@@ -1789,13 +1796,14 @@ public sealed class ErpApplicationService(
 
     private SaldoEstoque GetOrCreateSaldoParaEntrada(Guid produtoId, Guid depositoId)
     {
-        if (store.Saldos.TryGetValue((produtoId, depositoId), out var saldo))
+        var saldo = (saldoEstoqueRepository ?? new SaldoEstoqueStoreRepository(store)).Find(produtoId, depositoId);
+        if (saldo is not null)
         {
             return saldo;
         }
 
         saldo = new SaldoEstoque(produtoId, depositoId, 0m, permiteSaldoNegativo: false);
-        store.Saldos[(produtoId, depositoId)] = saldo;
+        (saldoEstoqueRepository ?? new SaldoEstoqueStoreRepository(store)).Save(saldo);
         return saldo;
     }
 
@@ -1929,9 +1937,7 @@ public sealed class ErpApplicationService(
 
     private bool HasNotaFiscalAtivaParaPedido(Guid pedidoId)
     {
-        return store.NotasFiscais.Values.Any(item =>
-            item.PedidoVendaId == pedidoId &&
-            item.Status != StatusNotaFiscal.Cancelada);
+        return (notaFiscalRepository ?? new NotaFiscalStoreRepository(store)).HasActiveForPedido(pedidoId);
     }
 
     private void EnsurePedidoPodeSerAlterado(Guid pedidoId)
@@ -1986,7 +1992,7 @@ public sealed class ErpApplicationService(
 
     private void AddStockMovement(MovimentoEstoque movimento)
     {
-        store.MovimentosEstoque.Add(movimento);
+        (movimentoEstoqueRepository ?? new MovimentoEstoqueStoreRepository(store)).Add(movimento);
     }
 
     private void LogMutation(string action, Guid? aggregateId, Guid? empresaId, params (string Key, object? Value)[] data)
@@ -2138,51 +2144,4 @@ public sealed class ErpApplicationService(
         }
     }
 
-    private sealed class ProdutoRepository(IErpStore store) : IProdutoRepository
-    {
-        public bool SkuJaExiste(Guid empresaId, string sku) =>
-            store.Produtos.Values.Any(produto => produto.EmpresaId == empresaId && string.Equals(produto.Sku, sku, StringComparison.OrdinalIgnoreCase));
-
-        public void Add(Produto produto) => store.Produtos[produto.Id] = produto;
-    }
-
-    private sealed class DepositoRepository(IErpStore store) : IDepositoRepository
-    {
-        public bool CodigoJaExiste(Guid empresaId, string codigo) =>
-            store.Depositos.Values.Any(deposito => deposito.EmpresaId == empresaId && string.Equals(deposito.Codigo, codigo.Trim(), StringComparison.OrdinalIgnoreCase));
-
-        public void Add(Deposito deposito) => store.Depositos[deposito.Id] = deposito;
-    }
-
-    private sealed class UsuarioRepository(IErpStore store) : IUsuarioRepository
-    {
-        public bool EmailJaExiste(Guid empresaId, string email) =>
-            store.Usuarios.Values.Any(usuario => usuario.EmpresaId == empresaId && string.Equals(usuario.Email, email.Trim(), StringComparison.OrdinalIgnoreCase));
-
-        public void Add(Usuario usuario) => store.Usuarios[usuario.Id] = usuario;
-    }
-
-    private sealed class PerfilAcessoRepository(IErpStore store) : IPerfilAcessoRepository
-    {
-        public bool NomeJaExiste(Guid empresaId, string nome) =>
-            store.PerfisAcesso.Values.Any(perfil =>
-                perfil.EmpresaId == empresaId &&
-                string.Equals(perfil.Nome, nome.Trim(), StringComparison.OrdinalIgnoreCase));
-
-        public void Add(PerfilAcesso perfilAcesso) => store.PerfisAcesso[perfilAcesso.Id] = perfilAcesso;
-    }
-
-    private sealed class NotaEntradaRepository(IErpStore store) : INotaEntradaRepository
-    {
-        public bool ChaveJaImportada(Guid empresaId, string chaveAcesso) => store.ChavesImportadas.Contains((empresaId, chaveAcesso));
-
-        public void RegistrarImportacao(Guid empresaId, string chaveAcesso) => store.ChavesImportadas.Add((empresaId, chaveAcesso));
-    }
-
-    private sealed class EventoIntegracaoRepository(IErpStore store) : IEventoIntegracaoRepository
-    {
-        public bool EventoJaProcessado(string eventoId) => store.EventosWebhook.Contains(eventoId);
-
-        public void Registrar(string eventoId, string origem) => store.EventosWebhook.Add(eventoId);
-    }
 }

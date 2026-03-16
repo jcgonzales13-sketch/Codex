@@ -75,6 +75,86 @@ internal static class ErpSnapshotSerializer
         };
     }
 
+    internal static string SerializeEmpresa(Empresa empresa) =>
+        JsonSerializer.Serialize(ToSnapshot(empresa), JsonOptions);
+
+    internal static Empresa? DeserializeEmpresa(string json) =>
+        JsonSerializer.Deserialize<EmpresaSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestoreEmpresa(snapshot)
+            : null;
+
+    internal static string SerializeFornecedor(Fornecedor fornecedor) =>
+        JsonSerializer.Serialize(ToSnapshot(fornecedor), JsonOptions);
+
+    internal static Fornecedor? DeserializeFornecedor(string json) =>
+        JsonSerializer.Deserialize<FornecedorSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestoreFornecedor(snapshot)
+            : null;
+
+    internal static string SerializeProduto(Produto produto) =>
+        JsonSerializer.Serialize(ToSnapshot(produto), JsonOptions);
+
+    internal static Produto? DeserializeProduto(string json) =>
+        JsonSerializer.Deserialize<ProdutoSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestoreProduto(snapshot)
+            : null;
+
+    internal static string SerializeCliente(Cliente cliente) =>
+        JsonSerializer.Serialize(ToSnapshot(cliente), JsonOptions);
+
+    internal static Cliente? DeserializeCliente(string json) =>
+        JsonSerializer.Deserialize<ClienteSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestoreCliente(snapshot)
+            : null;
+
+    internal static string SerializeDeposito(Deposito deposito) =>
+        JsonSerializer.Serialize(ToSnapshot(deposito), JsonOptions);
+
+    internal static Deposito? DeserializeDeposito(string json) =>
+        JsonSerializer.Deserialize<DepositoSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestoreDeposito(snapshot)
+            : null;
+
+    internal static string SerializeUsuario(Usuario usuario) =>
+        JsonSerializer.Serialize(ToSnapshot(usuario), JsonOptions);
+
+    internal static Usuario? DeserializeUsuario(string json) =>
+        JsonSerializer.Deserialize<UsuarioSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestoreUsuario(snapshot)
+            : null;
+
+    internal static string SerializePerfilAcesso(PerfilAcesso perfilAcesso) =>
+        JsonSerializer.Serialize(ToSnapshot(perfilAcesso), JsonOptions);
+
+    internal static PerfilAcesso? DeserializePerfilAcesso(string json) =>
+        JsonSerializer.Deserialize<PerfilAcessoSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestorePerfilAcesso(snapshot)
+            : null;
+
+    internal static string SerializePedidoVenda(PedidoVenda pedido) =>
+        JsonSerializer.Serialize(ToSnapshot(pedido), JsonOptions);
+
+    internal static PedidoVenda? DeserializePedidoVenda(string json) =>
+        JsonSerializer.Deserialize<PedidoSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestorePedido(snapshot)
+            : null;
+
+    internal static string SerializeNotaFiscal(NotaFiscal nota) =>
+        JsonSerializer.Serialize(ToSnapshot(nota), JsonOptions);
+
+    internal static NotaFiscal? DeserializeNotaFiscal(string json) =>
+        JsonSerializer.Deserialize<NotaFiscalSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestoreNotaFiscal(snapshot)
+            : null;
+
+    internal static string SerializeSaldoEstoque(SaldoEstoque saldo) =>
+        JsonSerializer.Serialize(ToSnapshot(saldo), JsonOptions);
+
+    internal static SaldoEstoque? DeserializeSaldoEstoque(string json) =>
+        JsonSerializer.Deserialize<SaldoSnapshot>(json, JsonOptions) is { } snapshot
+            ? RestoreSaldo(snapshot)
+            : null;
+
     public static void Load(IErpStore store, string json)
     {
         var envelope = JsonSerializer.Deserialize<SectionedSnapshotEnvelope>(json, JsonOptions);

@@ -10,7 +10,7 @@
 - [x] Adicionar cadastro operacional basico de fornecedores.
 - [x] Adicionar tratamento centralizado de excecoes de dominio e recurso nao encontrado.
 - [x] Disponibilizar armazenamento em memoria para uso imediato da API.
-- [ ] Adicionar exemplos de requisicao e resposta por modulo.
+- [x] Adicionar exemplos de requisicao e resposta por modulo.
 - [x] Cobrir a API com testes de integracao.
 
 ## Fase 2 - Camada de Aplicacao
@@ -24,13 +24,14 @@
 
 - [x] Introduzir provider de armazenamento configuravel (`InMemory` e `JsonFile`).
 - [x] Introduzir provider `SqlServer` para persistencia local/configuravel.
-- [ ] Escolher tecnologia de persistencia definitiva para producao.
+- [x] Escolher tecnologia de persistencia definitiva para producao.
 - [x] Criar modelos de armazenamento por modulo.
-- [ ] Implementar repositórios concretos.
-- [ ] Adicionar migrations e bootstrap inicial do banco.
+- [x] Implementar repositorios concretos.
+- [x] Adicionar migrations e bootstrap inicial do banco.
 - [ ] Remover dependencia do armazenamento em memoria para cenarios principais.
 - [x] Introduzir abstracao de armazenamento para desacoplar a aplicacao da implementacao em memoria.
 - [ ] Estabilizar a conectividade local da instancia SQL Server da maquina e o handshake de criptografia do cliente.
+- [~] Migrar dados operacionais para tabelas SQL dedicadas, reduzindo dependencia do snapshot por secao.
 
 ## Fase 4 - Fluxos Integrados
 
@@ -51,11 +52,11 @@
 
 ## Fase 6 - Qualidade Operacional
 
-- [ ] Adicionar CI para build e testes.
-- [ ] Ao montar o pipeline, lembrar de validar o comportamento do SDK com `MSBuildEnableWorkloadResolver=false` se o agente repetir o problema de workload resolver visto no ambiente local.
+- [x] Adicionar CI para build e testes.
+- [x] Ao montar o pipeline, lembrar de validar o comportamento do SDK com `MSBuildEnableWorkloadResolver=false` se o agente repetir o problema de workload resolver visto no ambiente local.
 - [x] Adicionar logging estruturado.
 - [x] Adicionar observabilidade, metricas e tracing.
 - [x] Adicionar health checks reais para o provider de storage.
 - [x] Expor historico operacional de movimentos de estoque.
 - [x] Adicionar filtros e paginacao nas consultas principais da API.
-- [ ] Documentar deploy e execucao por ambiente.
+- [x] Documentar deploy e execucao por ambiente.

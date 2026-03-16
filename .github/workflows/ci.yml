@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  DOTNET_NOLOGO: true
+  MSBuildEnableWorkloadResolver: false
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore ERP.sln
+
+      - name: Build
+        run: dotnet build ERP.sln --no-restore -m:1 -nr:false -v minimal
+
+      - name: Test
+        run: dotnet test ERP.sln --no-build -m:1 -nr:false -v minimal

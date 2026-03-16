@@ -1,4 +1,5 @@
 using ERP.Api.Application;
+using ERP.Api.Application.Configuration;
 using ERP.Api.Application.Contracts;
 using ERP.Api.Application.Health;
 using ERP.Api.Application.Logging;
@@ -85,6 +86,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<WebhookOptions>(builder.Configuration.GetSection(WebhookOptions.SectionName));
+RuntimeConfigurationValidator.Validate(builder.Configuration, builder.Environment);
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -119,12 +121,23 @@ builder.Services.AddSingleton<InMemoryObservabilityCollector>();
 builder.Services.AddSingleton<ERP.Modules.Empresas.IEmpresaRepository, EmpresaStoreRepository>();
 builder.Services.AddSingleton<ERP.Modules.Clientes.IClienteRepository, ClienteStoreRepository>();
 builder.Services.AddSingleton<ERP.Modules.Fornecedores.IFornecedorRepository, FornecedorStoreRepository>();
+builder.Services.AddSingleton<ERP.Modules.Catalogo.IProdutoRepository, ProdutoStoreRepository>();
+builder.Services.AddSingleton<ERP.Modules.Depositos.IDepositoRepository, DepositoStoreRepository>();
+builder.Services.AddSingleton<ERP.Modules.Identity.IUsuarioRepository, UsuarioStoreRepository>();
+builder.Services.AddSingleton<ERP.Modules.Identity.IPerfilAcessoRepository, PerfilAcessoStoreRepository>();
+builder.Services.AddSingleton<ERP.Modules.Compras.INotaEntradaRepository, NotaEntradaStoreRepository>();
+builder.Services.AddSingleton<ERP.Modules.Integracoes.IEventoIntegracaoRepository, EventoIntegracaoStoreRepository>();
+builder.Services.AddSingleton<ISaldoEstoqueStoreRepository, SaldoEstoqueStoreRepository>();
+builder.Services.AddSingleton<IMovimentoEstoqueStoreRepository, MovimentoEstoqueStoreRepository>();
+builder.Services.AddSingleton<IPedidoVendaStoreRepository, PedidoVendaStoreRepository>();
+builder.Services.AddSingleton<INotaFiscalStoreRepository, NotaFiscalStoreRepository>();
 builder.Services.AddSingleton<ErpApplicationService>();
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<WebhookSignatureService>();
 builder.Services.AddSingleton<WebhookAccessService>();
 
 var app = builder.Build();
+_ = app.Services.GetRequiredService<IErpStore>();
 
 app.UseErpExceptionHandling();
 app.UseStructuredRequestLogging();
@@ -247,10 +260,72 @@ app.MapGet("/system/metrics", (InMemoryObservabilityCollector observabilityColle
     .Produces(StatusCodes.Status200OK);
 
 app.MapErpEndpoints();
-app.MapGroup("/api/v1")
-    .WithSummary("Superficie versionada v1.")
-    .WithDescription("Agrupa os endpoints versionados da API para evolucao futura sem quebrar os clientes atuais.")
-    .MapErpEndpoints();
+var apiV1 = app.MapGroup("/api/v1");
+apiV1.MapGet("/modules", () => Results.Ok(ApiResponses.Ok(new[]
+{
+    new { Name = "Empresas", Capability = "Cadastro de empresas e validacao do contexto operacional" },
+    new { Name = "Fornecedores", Capability = "Cadastro de fornecedores e vinculo operacional com compras" },
+    new { Name = "Catalogo", Capability = "Cadastro de produtos, variacoes e auditoria fiscal" },
+    new { Name = "Clientes", Capability = "Cadastro de clientes, bloqueio e consulta operacional" },
+    new { Name = "Depositos", Capability = "Cadastro de depositos e validacao operacional de armazenagem" },
+    new { Name = "Compras", Capability = "Importacao de nota de entrada com conciliacao" },
+    new { Name = "Estoque", Capability = "Ajustes, reservas, baixas e transferencias" },
+    new { Name = "Vendas", Capability = "Aprovacao e reserva de pedidos" },
+    new { Name = "Fiscal", Capability = "Autorizacao, rejeicao e cancelamento de notas" },
+    new { Name = "Identity", Capability = "Cadastro de usuarios, perfis de acesso, ativacao e permissoes" },
+    new { Name = "Integracoes", Capability = "Processamento idempotente de webhooks" }
+})))
+.WithSummary("Lista os modulos da aplicacao em v1.")
+.WithDescription("Versao v1 do inventario funcional da API, usada para clientes que consumem apenas a superficie versionada.")
+.Produces(StatusCodes.Status200OK);
+apiV1.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(ApiResponses.Ok(new
+        {
+            status = report.Status.ToString(),
+            checks = report.Entries.Select(entry => new
+            {
+                name = entry.Key,
+                status = entry.Value.Status.ToString(),
+                description = entry.Value.Description
+            })
+        }));
+    }
+})
+.WithSummary("Health check de prontidao em v1.")
+.WithDescription("Versao v1 do endpoint de readiness, para clientes que consomem somente a superficie versionada.");
+apiV1.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.IOptions<StorageOptions> options) =>
+    Results.Ok(ApiResponses.Ok(new StorageStatusResponse(
+        options.Value.Provider,
+        options.Value.FilePath,
+        store.Empresas.Count,
+        store.Fornecedores.Count,
+        store.Produtos.Count,
+        store.Clientes.Count,
+        store.Depositos.Count,
+        store.Usuarios.Count,
+        store.Pedidos.Count,
+        store.NotasFiscais.Count,
+        store.Saldos.Count,
+        store.ChavesImportadas.Count,
+        store.EventosWebhook.Count))))
+    .WithSummary("Inspeciona o estado do storage em v1.")
+    .WithDescription("Versao v1 do endpoint de diagnostico do storage.")
+    .Produces(StatusCodes.Status200OK);
+apiV1.MapGet("/system/events", (string? type, string? sourceModule, int? page, int? pageSize, ErpApplicationService service) =>
+    Results.Ok(ApiResponses.Ok(service.ConsultarEventosIntegracao(new ConsultarEventosIntegracaoRequest(type, sourceModule, page ?? 1, pageSize ?? 20)))))
+    .WithSummary("Consulta eventos internos em v1.")
+    .WithDescription("Versao v1 da consulta de eventos internos de integracao.")
+    .Produces(StatusCodes.Status200OK);
+apiV1.MapGet("/system/metrics", (InMemoryObservabilityCollector observabilityCollector) =>
+    Results.Ok(ApiResponses.Ok(observabilityCollector.Snapshot())))
+    .WithSummary("Consulta metricas internas em v1.")
+    .WithDescription("Versao v1 da consulta de metricas operacionais em memoria.")
+    .Produces(StatusCodes.Status200OK);
+apiV1.MapErpEndpoints();
 
 app.Run();
 

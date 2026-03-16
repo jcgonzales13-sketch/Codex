@@ -4,6 +4,10 @@ Projeto de ERP modular em .NET 9 com foco em regras de dominio por modulo e cobe
 
 O storage atual ja foi separado internamente por secoes de modulo, mantendo compatibilidade com snapshots legados enquanto prepara a migracao para persistencia definitiva por contexto funcional.
 
+Os endpoints paginados tambem expõem metadados HTTP nos headers `X-Page`, `X-Page-Size`, `X-Total-Count` e `X-Total-Pages`, facilitando integracao com frontends e clientes externos.
+
+A decisao atual do projeto para producao e usar `SqlServer` como persistencia principal, mantendo `JsonFile` para desenvolvimento local e cenarios efemeros.
+
 A borda HTTP das entidades CRUD principais foi alinhada para um modelo mais RESTful:
 - `POST` para criacao
 - `GET /recurso/{id}` para leitura pontual
@@ -90,6 +94,14 @@ Executar a API:
 dotnet run --project .\src\ERP.Api\ERP.Api.csproj
 ```
 
+Execucao local recomendada neste ambiente:
+
+```powershell
+$env:MSBuildEnableWorkloadResolver='false'
+$env:ASPNETCORE_ENVIRONMENT='Development'
+dotnet run --project .\src\ERP.Api\ERP.Api.csproj
+```
+
 Os logs da API sao emitidos em JSON no console, com `scope`, `timestamp`, `X-Correlation-Id` e trilha minima de operacoes sensiveis para facilitar suporte, observabilidade e deploy em plataforma.
 
 Por padrao, a API expoe endpoints minimos:
@@ -101,9 +113,13 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /health/ready`
 - `GET /swagger`
 - `GET /modules`
+- `GET /api/v1/modules`
 - `GET /system/storage`
+- `GET /api/v1/system/storage`
 - `GET /system/events`
+- `GET /api/v1/system/events`
 - `GET /system/metrics`
+- `GET /api/v1/system/metrics`
 - `GET /estoque/movimentos`
 - `GET /empresas`
 - `GET /empresas/{id}`
@@ -117,6 +133,7 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /depositos/{id}`
 - `GET /identity/usuarios`
 - `GET /identity/usuarios/{id}`
+- `GET /identity/me`
 - `GET /identity/permissoes`
 - `GET /identity/perfis/padroes`
 - `GET /identity/perfis`
@@ -130,6 +147,7 @@ Por padrao, a API expoe endpoints minimos:
 - `GET /fiscal/notas`
 - `GET /fiscal/notas/{id}`
 - `GET /integracoes/webhooks`
+- `GET /api/v1/health/ready`
 
 ## Como Rodar os Testes
 
@@ -152,6 +170,60 @@ dotnet test .\tests\ERP.Modules.Estoque.UnitTests\ERP.Modules.Estoque.UnitTests.
 ```
 
 Observacao: no ambiente onde este repositorio foi preparado, o SDK .NET 9 pode falhar por interferencia do workload resolver. Se isso acontecer, execute os comandos com `MSBuildEnableWorkloadResolver=false`, por exemplo: `$env:MSBuildEnableWorkloadResolver='false'; dotnet test ERP.sln`.
+
+## Execucao por Ambiente
+
+`Development`
+
+- `ASPNETCORE_ENVIRONMENT=Development`
+- `Storage__Provider=JsonFile`
+- `Storage__FilePath=App_Data/erp-store.json`
+- `Jwt__SigningKey` pode permanecer local, mas deve ser configurada explicitamente fora do codigo quando a API sair de um ambiente efemero
+
+`Render`
+
+- `ASPNETCORE_ENVIRONMENT=Production`
+- `Storage__Provider=JsonFile` com persistent disk em `/data`, ou `InMemory` para ambiente descartavel
+- `Storage__FilePath=/data/erp-store.json`
+- `Jwt__SigningKey` obrigatoria e forte
+- `WebhookSecurity__SharedSecret` obrigatoria quando houver integracoes externas com assinatura
+
+`CI`
+
+- o workflow usa `MSBuildEnableWorkloadResolver=false`
+- executa `restore`, `build` e `test` em `ERP.sln`
+- arquivo do pipeline: [ci.yml](/c:/CodexProject/.github/workflows/ci.yml)
+
+`SqlServer`
+
+- o provider aplica bootstrap e migrations iniciais automaticamente ao subir
+- as migrations tambem estao versionadas em arquivos `.sql` sob [SqlServer](/c:/CodexProject/src/ERP.Api/Application/Storage/Migrations/SqlServer)
+- os dados de snapshot continuam separados por secao em `Storage__StateTable`
+- o provider SQL agora possui tabelas dedicadas para dados mestres, marcadores de idempotencia e agregados operacionais, reduzindo drasticamente a dependencia do `ErpState` para compatibilidade e fallback
+- tabelas padrao:
+  - `Storage__StateTable=ErpState`
+  - `Storage__MigrationsTable=ErpMigrations`
+  - `dbo.MovimentosEstoque`
+  - `dbo.IntegrationEvents`
+  - `dbo.ImportacoesNotaEntrada`
+  - `dbo.WebhooksProcessados`
+  - `dbo.SessoesAutenticacao`
+  - `dbo.RefreshTokens`
+  - `dbo.PedidosVenda`
+  - `dbo.NotasFiscais`
+  - `dbo.SaldosEstoque`
+  - `dbo.Empresas`
+  - `dbo.Fornecedores`
+  - `dbo.Produtos`
+  - `dbo.Clientes`
+  - `dbo.Depositos`
+  - `dbo.Usuarios`
+  - `dbo.PerfisAcesso`
+  - `dbo.ChavesImportadas`
+  - `dbo.EventosWebhook`
+- schema padrao: `dbo`
+- configuracao de producao exemplo: [appsettings.Production.json](/c:/CodexProject/src/ERP.Api/appsettings.Production.json)
+- decisao registrada em [adr-001-persistencia-producao.md](/c:/CodexProject/docs/adr-001-persistencia-producao.md)
 
 ## Autenticacao Basica
 
@@ -250,17 +322,37 @@ Abre a interface Swagger UI da API.
 
 Retorna a lista de modulos e suas capacidades principais.
 
+`GET /api/v1/modules`
+
+Retorna a mesma lista de modulos pela superficie versionada v1.
+
 `GET /system/storage`
 
 Retorna o provider de armazenamento ativo e a contagem atual de entidades em memoria/persistencia.
+
+`GET /api/v1/system/storage`
+
+Retorna o diagnostico do storage pela superficie versionada v1.
 
 `GET /system/events`
 
 Retorna a trilha de eventos internos gerados pelas operacoes integradas entre modulos, com filtros opcionais por tipo e modulo de origem.
 
+`GET /api/v1/system/events`
+
+Retorna a mesma trilha de eventos internos pela superficie versionada v1.
+
 `GET /system/metrics`
 
 Retorna metricas operacionais em memoria sobre requests HTTP, falhas, operacoes de dominio e excecoes. Tambem ha `ActivitySource` e `Meter` internos para evoluir a observabilidade da API.
+
+`GET /api/v1/system/metrics`
+
+Retorna as mesmas metricas operacionais pela superficie versionada v1.
+
+`GET /api/v1/health/ready`
+
+Executa o readiness check pela superficie versionada v1.
 
 `GET /estoque/movimentos`
 
@@ -321,6 +413,10 @@ Executa a inativacao logica do deposito usando semantica RESTful.
 `GET /identity/usuarios`
 
 Retorna usuarios com filtros opcionais por empresa, status, termo e paginacao.
+
+`GET /identity/me`
+
+Retorna a sessao autenticada atual resolvida a partir do `Authorization: Bearer` ou `X-Session-Token`.
 
 `GET /identity/permissoes`
 
@@ -391,6 +487,8 @@ Exemplos de consulta:
 - `GET /fiscal/notas?status=Autorizada&clienteId={clienteId}&page=1&pageSize=20`
 - `GET /integracoes/webhooks?origem=marketplace&status=Processado&page=1&pageSize=20`
 - `GET /system/events?type=vendas.pedido_reservado&page=1&pageSize=20`
+- `GET /api/v1/system/events?type=vendas.pedido_reservado&page=1&pageSize=20`
+- `GET /api/v1/system/metrics`
 
 ## Persistencia Local
 
@@ -398,7 +496,7 @@ O projeto suporta provider configuravel em `Storage`:
 
 - `InMemory`: desenvolvimento rapido sem persistencia.
 - `JsonFile`: provider ativo para desenvolvimento local com persistencia em arquivo.
-- `SqlServer`: persiste o estado da aplicacao em uma tabela no SQL Server.
+- `SqlServer`: persiste o estado da aplicacao por secoes no SQL Server e ja usa tabelas dedicadas para eventos de integracao e movimentos de estoque.
 
 Exemplo em `appsettings`:
 
@@ -416,7 +514,8 @@ Exemplo com SQL Server local:
   "Provider": "SqlServer",
   "ConnectionString": "Server=GONZALES;Database=CodexErp;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False;",
   "Schema": "dbo",
-  "StateTable": "ErpState"
+  "StateTable": "ErpState",
+  "MigrationsTable": "ErpMigrations"
 }
 ```
 
@@ -437,9 +536,20 @@ Variaveis uteis:
 
 - `Storage__Provider=JsonFile`
 - `Storage__FilePath=/data/erp-store.json`
+- `Jwt__Issuer=CodexErp`
+- `Jwt__Audience=CodexErpClients`
+- `Jwt__SigningKey=<segredo-forte>`
+- `WebhookSecurity__SharedSecret=<segredo-do-webhook>`
 - ou `Storage__Provider=InMemory` para ambiente efemero
 
 O container ja respeita a variavel `PORT` do Render e usa `ForwardedHeaders` para funcionar corretamente atras do proxy HTTPS da plataforma.
+
+Para o primeiro deploy no Render, a sequencia recomendada e:
+
+1. publicar a imagem a partir do `Dockerfile`
+2. configurar `PORT`, `ASPNETCORE_ENVIRONMENT`, `Storage__*`, `Jwt__*` e `WebhookSecurity__SharedSecret`
+3. validar `/healthz`, `/health/ready` e `/swagger`
+4. criar a primeira empresa e o primeiro usuario administrador
 
 Observacao importante sobre esta maquina:
 

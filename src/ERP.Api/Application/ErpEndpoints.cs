@@ -13,8 +13,8 @@ public static class ErpEndpoints
     public static IEndpointRouteBuilder MapErpEndpoints(this IEndpointRouteBuilder app)
     {
         var empresas = app.MapGroup("/empresas").WithTags("Empresas");
-        empresas.MapGet(string.Empty, (string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarEmpresas(new ConsultarEmpresasRequest(status, termo, page ?? 1, pageSize ?? 20)))))
+        empresas.MapGet(string.Empty, (HttpContext httpContext, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarEmpresas(new ConsultarEmpresasRequest(status, termo, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta empresas.")
             .WithDescription("Lista empresas com filtros opcionais por status, termo de busca e paginacao. Use este endpoint para montar seletores administrativos e validar o contexto empresarial disponivel.")
             .Produces(StatusCodes.Status200OK);
@@ -106,8 +106,8 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status404NotFound);
 
         var catalogo = app.MapGroup("/catalogo").WithTags("Catalogo");
-        catalogo.MapGet("/produtos", (Guid? empresaId, bool? ativo, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarProdutos(new ConsultarProdutosRequest(empresaId, ativo, termo, page ?? 1, pageSize ?? 20)))))
+        catalogo.MapGet("/produtos", (HttpContext httpContext, Guid? empresaId, bool? ativo, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarProdutos(new ConsultarProdutosRequest(empresaId, ativo, termo, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta produtos.")
             .WithDescription("Lista produtos por empresa, status ativo, termo e paginacao. Adequado para pesquisa operacional e montagem de catalogo no frontend.")
             .Produces(StatusCodes.Status200OK);
@@ -177,8 +177,8 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status404NotFound);
 
         var clientes = app.MapGroup("/clientes").WithTags("Clientes");
-        clientes.MapGet(string.Empty, (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarClientes(new ConsultarClientesRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))))
+        clientes.MapGet(string.Empty, (HttpContext httpContext, Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarClientes(new ConsultarClientesRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta clientes.")
             .WithDescription("Lista clientes com filtros por empresa, status, termo e paginacao. Use para pesquisa comercial e suporte ao fluxo de vendas.")
             .Produces(StatusCodes.Status200OK);
@@ -271,8 +271,8 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status404NotFound);
 
         var fornecedores = app.MapGroup("/fornecedores").WithTags("Fornecedores");
-        fornecedores.MapGet(string.Empty, (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarFornecedores(new ConsultarFornecedoresRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))))
+        fornecedores.MapGet(string.Empty, (HttpContext httpContext, Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarFornecedores(new ConsultarFornecedoresRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta fornecedores.")
             .WithDescription("Lista fornecedores com filtros por empresa, status, termo e paginacao. Apoia compras, conciliacao e auditoria de origem dos documentos de entrada.")
             .Produces(StatusCodes.Status200OK);
@@ -365,8 +365,8 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status404NotFound);
 
         var depositos = app.MapGroup("/depositos").WithTags("Depositos");
-        depositos.MapGet(string.Empty, (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarDepositos(new ConsultarDepositosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))))
+        depositos.MapGet(string.Empty, (HttpContext httpContext, Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarDepositos(new ConsultarDepositosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta depositos.")
             .WithDescription("Lista depositos por empresa, status, termo e paginacao. Use para selecao operacional de armazenagem e roteamento de estoque.")
             .Produces(StatusCodes.Status200OK);
@@ -456,8 +456,8 @@ public static class ErpEndpoints
             .WithSummary("Lista os perfis padrao disponibilizados para novas empresas.")
             .WithDescription("Retorna o catalogo de perfis padrao que a aplicacao cria automaticamente quando uma empresa e cadastrada.")
             .Produces(StatusCodes.Status200OK);
-        identity.MapGet("/perfis", (Guid? empresaId, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarPerfisAcesso(new ConsultarPerfisAcessoRequest(empresaId, termo, page ?? 1, pageSize ?? 20)))))
+        identity.MapGet("/perfis", (HttpContext httpContext, Guid? empresaId, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarPerfisAcesso(new ConsultarPerfisAcessoRequest(empresaId, termo, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta perfis de acesso por empresa.")
             .WithDescription("Lista perfis de acesso por empresa com suporte a filtro textual e paginacao para administracao do modulo Identity.")
             .Produces(StatusCodes.Status200OK);
@@ -467,8 +467,8 @@ public static class ErpEndpoints
             .WithDescription("Retorna o perfil de acesso informado com o conjunto atual de permissoes.")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
-        identity.MapGet("/usuarios", (Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarUsuarios(new ConsultarUsuariosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20)))))
+        identity.MapGet("/usuarios", (HttpContext httpContext, Guid? empresaId, string? status, string? termo, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarUsuarios(new ConsultarUsuariosRequest(empresaId, status, termo, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta usuarios por empresa.")
             .WithDescription("Lista usuarios por empresa com filtros por status e termo de busca, retornando tambem permissoes e perfis associados.")
             .Produces(StatusCodes.Status200OK);
@@ -478,6 +478,16 @@ public static class ErpEndpoints
             .WithDescription("Retorna o cadastro atual do usuario informado, incluindo permissoes e perfis vinculados.")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
+        identity.MapGet("/me", (HttpContext httpContext, ErpApplicationService service) =>
+        {
+            var sessionToken = ResolveSessionToken(httpContext);
+            return Results.Ok(ApiResponses.Ok(service.ConsultarSessao(new ConsultarSessaoRequest(sessionToken))));
+        })
+        .WithSummary("Consulta a sessao autenticada atual.")
+        .WithDescription("Resolve o usuario autenticado atual a partir do header Authorization Bearer ou X-Session-Token, sem exigir reenvio do token no corpo da requisicao.")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status404NotFound);
         identity.MapPost("/perfis", (HttpContext httpContext, CreatePerfilAcessoRequest request, ErpApplicationService service) =>
         {
             RequirePermission(httpContext, service, IdentityPermissions.IdentityManage, request.EmpresaId);
@@ -645,13 +655,13 @@ public static class ErpEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         var estoque = app.MapGroup("/estoque").WithTags("Estoque");
-        estoque.MapGet("/saldos", (Guid? produtoId, Guid? depositoId, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarSaldos(new ConsultarSaldosEstoqueRequest(produtoId, depositoId, page ?? 1, pageSize ?? 20)))))
+        estoque.MapGet("/saldos", (HttpContext httpContext, Guid? produtoId, Guid? depositoId, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarSaldos(new ConsultarSaldosEstoqueRequest(produtoId, depositoId, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta saldos de estoque.")
             .WithDescription("Lista saldos por produto, deposito e paginacao. Use este endpoint para visao atual de disponibilidade operacional.")
             .Produces(StatusCodes.Status200OK);
-        estoque.MapGet("/movimentos", (Guid? produtoId, Guid? depositoId, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarMovimentosEstoque(new ConsultarMovimentosEstoqueRequest(produtoId, depositoId, page ?? 1, pageSize ?? 20)))))
+        estoque.MapGet("/movimentos", (HttpContext httpContext, Guid? produtoId, Guid? depositoId, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarMovimentosEstoque(new ConsultarMovimentosEstoqueRequest(produtoId, depositoId, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta movimentos de estoque.")
             .WithDescription("Lista o historico de movimentos por produto, deposito e paginacao. Adequado para auditoria, suporte e rastreabilidade operacional.")
             .Produces(StatusCodes.Status200OK);
@@ -712,8 +722,8 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status403Forbidden);
 
         var vendas = app.MapGroup("/vendas").WithTags("Vendas");
-        vendas.MapGet("/pedidos", (string? status, Guid? clienteId, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarPedidos(new ConsultarPedidosVendaRequest(status, clienteId, page ?? 1, pageSize ?? 20)))))
+        vendas.MapGet("/pedidos", (HttpContext httpContext, string? status, Guid? clienteId, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarPedidos(new ConsultarPedidosVendaRequest(status, clienteId, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta pedidos de venda.")
             .WithDescription("Lista pedidos por status, cliente e paginacao. Use para acompanhamento comercial e operacional do ciclo de vendas.")
             .Produces(StatusCodes.Status200OK);
@@ -785,8 +795,8 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status404NotFound);
 
         var compras = app.MapGroup("/compras").WithTags("Compras");
-        compras.MapGet("/importacoes-nota-entrada", (Guid? empresaId, Guid? fornecedorId, Guid? depositoId, bool? importadaComSucesso, string? chaveAcesso, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresaId, fornecedorId, depositoId, importadaComSucesso, chaveAcesso, page ?? 1, pageSize ?? 20)))))
+        compras.MapGet("/importacoes-nota-entrada", (HttpContext httpContext, Guid? empresaId, Guid? fornecedorId, Guid? depositoId, bool? importadaComSucesso, string? chaveAcesso, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarImportacoesNotaEntrada(new ConsultarImportacoesNotaEntradaRequest(empresaId, fornecedorId, depositoId, importadaComSucesso, chaveAcesso, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta importacoes de nota de entrada.")
             .WithDescription("Lista o historico de importacoes de compras com filtros operacionais por empresa, fornecedor, deposito, sucesso e chave de acesso.")
             .Produces(StatusCodes.Status200OK);
@@ -803,8 +813,8 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status403Forbidden);
 
         var fiscal = app.MapGroup("/fiscal").WithTags("Fiscal");
-        fiscal.MapGet("/notas", (string? status, Guid? clienteId, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarNotasFiscais(new ConsultarNotasFiscaisRequest(status, clienteId, page ?? 1, pageSize ?? 20)))))
+        fiscal.MapGet("/notas", (HttpContext httpContext, string? status, Guid? clienteId, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarNotasFiscais(new ConsultarNotasFiscaisRequest(status, clienteId, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta notas fiscais.")
             .WithDescription("Lista notas fiscais por status, cliente e paginacao. Use para acompanhamento do ciclo fiscal e conciliacao de faturamento.")
             .Produces(StatusCodes.Status200OK);
@@ -864,8 +874,8 @@ public static class ErpEndpoints
         .Produces(StatusCodes.Status404NotFound);
 
         var integracoes = app.MapGroup("/integracoes").WithTags("Integracoes");
-        integracoes.MapGet("/webhooks", (string? origem, string? status, string? eventoId, int? page, int? pageSize, ErpApplicationService service) =>
-            Results.Ok(ApiResponses.Ok(service.ConsultarWebhooks(new ConsultarWebhooksRequest(origem, status, eventoId, page ?? 1, pageSize ?? 20)))))
+        integracoes.MapGet("/webhooks", (HttpContext httpContext, string? origem, string? status, string? eventoId, int? page, int? pageSize, ErpApplicationService service) =>
+            ToPagedOk(httpContext, service.ConsultarWebhooks(new ConsultarWebhooksRequest(origem, status, eventoId, page ?? 1, pageSize ?? 20))))
             .WithSummary("Consulta webhooks processados.")
             .WithDescription("Lista o historico operacional de webhooks por origem, status e evento, facilitando suporte e rastreabilidade de integracoes externas.")
             .Produces(StatusCodes.Status200OK);
@@ -925,6 +935,16 @@ public static class ErpEndpoints
     {
         var sessionToken = ResolveSessionToken(httpContext);
         service.ValidarAcesso(sessionToken, permission, empresaId);
+    }
+
+    private static IResult ToPagedOk<T>(HttpContext httpContext, PagedResponse<T> response)
+    {
+        httpContext.Response.Headers["X-Page"] = response.Page.ToString();
+        httpContext.Response.Headers["X-Page-Size"] = response.PageSize.ToString();
+        httpContext.Response.Headers["X-Total-Count"] = response.TotalItems.ToString();
+        var totalPages = response.PageSize <= 0 ? 0 : (int)Math.Ceiling(response.TotalItems / (double)response.PageSize);
+        httpContext.Response.Headers["X-Total-Pages"] = totalPages.ToString();
+        return Results.Ok(ApiResponses.Ok(response));
     }
 
     private static string ResolveSessionToken(HttpContext httpContext)
