@@ -10,4 +10,5 @@ public sealed class StorageOptions
     public string Schema { get; set; } = "dbo";
     public string StateTable { get; set; } = "ErpState";
     public string MigrationsTable { get; set; } = "ErpMigrations";
+    public bool PersistLegacyStateSnapshot { get; set; } = true;
 }

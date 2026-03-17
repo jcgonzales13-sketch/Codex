@@ -56,5 +56,10 @@ internal static class RuntimeConfigurationValidator
         {
             throw new InvalidOperationException("Em producao, Storage:Provider deve ser SqlServer.");
         }
+
+        if (storage.PersistLegacyStateSnapshot)
+        {
+            throw new InvalidOperationException("Em producao, Storage:PersistLegacyStateSnapshot deve ser false para evitar dependencia operacional do ErpState.");
+        }
     }
 }

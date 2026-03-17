@@ -20,6 +20,12 @@ public sealed class ErpApiFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<IErpStore>();
             services.AddSingleton<IErpStore, InMemoryErpStore>();
+            services.PostConfigure<StorageOptions>(options =>
+            {
+                options.Provider = "InMemory";
+                options.FilePath = string.Empty;
+                options.ConnectionString = string.Empty;
+            });
             services.PostConfigure<WebhookOptions>(options =>
             {
                 options.SharedSecret = "integration-webhook-secret";

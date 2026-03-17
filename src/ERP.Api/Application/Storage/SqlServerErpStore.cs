@@ -33,10 +33,32 @@ public sealed class SqlServerErpStore : IErpStore
     private const string AccessProfilesTable = "PerfisAcesso";
     private const string ImportedKeysTable = "ChavesImportadas";
     private const string WebhookEventsTable = "EventosWebhook";
+    private static readonly string[] DedicatedTables =
+    [
+        StockMovementsTable,
+        IntegrationEventsTable,
+        PurchaseImportsTable,
+        ProcessedWebhooksTable,
+        AuthSessionsTable,
+        RefreshTokensTable,
+        SalesOrdersTable,
+        InvoicesTable,
+        StockBalancesTable,
+        CompaniesTable,
+        SuppliersTable,
+        ProductsTable,
+        CustomersTable,
+        WarehousesTable,
+        UsersTable,
+        AccessProfilesTable,
+        ImportedKeysTable,
+        WebhookEventsTable
+    ];
     private readonly string _connectionString;
     private readonly string _schema;
     private readonly string _table;
     private readonly string _migrationsTable;
+    private readonly bool _persistLegacyStateSnapshot;
 
     public SqlServerErpStore(IOptions<StorageOptions> options)
     {
@@ -44,6 +66,7 @@ public sealed class SqlServerErpStore : IErpStore
         _schema = string.IsNullOrWhiteSpace(options.Value.Schema) ? "dbo" : options.Value.Schema.Trim();
         _table = string.IsNullOrWhiteSpace(options.Value.StateTable) ? "ErpState" : options.Value.StateTable.Trim();
         _migrationsTable = string.IsNullOrWhiteSpace(options.Value.MigrationsTable) ? "ErpMigrations" : options.Value.MigrationsTable.Trim();
+        _persistLegacyStateSnapshot = options.Value.PersistLegacyStateSnapshot;
 
         EnsureSchemaMigrated();
         Load();
@@ -75,45 +98,103 @@ public sealed class SqlServerErpStore : IErpStore
         {
             using var connection = new SqlConnection(_connectionString);
             connection.Open();
+            using var transaction = connection.BeginTransaction();
 
-            foreach (var (sectionName, payload) in ErpSnapshotSerializer.SerializeSections(this))
+            if (_persistLegacyStateSnapshot)
             {
-                var sql = $"""
-                    MERGE [{_schema}].[{_table}] AS target
-                    USING (SELECT @StateKey AS StateKey, @Payload AS Payload, SYSUTCDATETIME() AS UpdatedAt) AS source
-                    ON target.StateKey = source.StateKey
-                    WHEN MATCHED THEN
-                        UPDATE SET Payload = source.Payload, UpdatedAt = source.UpdatedAt
-                    WHEN NOT MATCHED THEN
-                        INSERT (StateKey, Payload, UpdatedAt) VALUES (source.StateKey, source.Payload, source.UpdatedAt);
-                    """;
+                foreach (var (sectionName, payload) in ErpSnapshotSerializer.SerializeSections(this))
+                {
+                    var sql = $"""
+                        MERGE [{_schema}].[{_table}] AS target
+                        USING (SELECT @StateKey AS StateKey, @Payload AS Payload, SYSUTCDATETIME() AS UpdatedAt) AS source
+                        ON target.StateKey = source.StateKey
+                        WHEN MATCHED THEN
+                            UPDATE SET Payload = source.Payload, UpdatedAt = source.UpdatedAt
+                        WHEN NOT MATCHED THEN
+                            INSERT (StateKey, Payload, UpdatedAt) VALUES (source.StateKey, source.Payload, source.UpdatedAt);
+                        """;
 
-                using var command = new SqlCommand(sql, connection);
-                command.Parameters.AddWithValue("@StateKey", sectionName);
-                command.Parameters.AddWithValue("@Payload", payload);
-                command.ExecuteNonQuery();
+                    using var command = new SqlCommand(sql, connection, transaction);
+                    command.Parameters.AddWithValue("@StateKey", sectionName);
+                    command.Parameters.AddWithValue("@Payload", payload);
+                    command.ExecuteNonQuery();
+                }
+            }
+            else if (TableExists(connection, _table))
+            {
+                using var cleanupCommand = new SqlCommand($"DELETE FROM [{_schema}].[{_table}];", connection, transaction);
+                cleanupCommand.ExecuteNonQuery();
             }
 
-            PersistStockMovements(connection);
-            PersistIntegrationEvents(connection);
-            PersistPurchaseImports(connection);
-            PersistProcessedWebhooks(connection);
-            PersistAuthSessions(connection);
-            PersistRefreshTokens(connection);
-            PersistSalesOrders(connection);
-            PersistInvoices(connection);
-            PersistStockBalances(connection);
-            PersistCompanies(connection);
-            PersistSuppliers(connection);
-            PersistProducts(connection);
-            PersistCustomers(connection);
-            PersistWarehouses(connection);
-            PersistUsers(connection);
-            PersistAccessProfiles(connection);
-            PersistImportedKeys(connection);
-            PersistWebhookEvents(connection);
+            PersistStockMovements(connection, transaction);
+            PersistIntegrationEvents(connection, transaction);
+            PersistPurchaseImports(connection, transaction);
+            PersistProcessedWebhooks(connection, transaction);
+            PersistAuthSessions(connection, transaction);
+            PersistRefreshTokens(connection, transaction);
+            PersistSalesOrders(connection, transaction);
+            PersistInvoices(connection, transaction);
+            PersistStockBalances(connection, transaction);
+            PersistCompanies(connection, transaction);
+            PersistSuppliers(connection, transaction);
+            PersistProducts(connection, transaction);
+            PersistCustomers(connection, transaction);
+            PersistWarehouses(connection, transaction);
+            PersistUsers(connection, transaction);
+            PersistAccessProfiles(connection, transaction);
+            PersistImportedKeys(connection, transaction);
+            PersistWebhookEvents(connection, transaction);
+            transaction.Commit();
         }
     }
+
+    public (string? LastAppliedMigrationId, int PendingMigrations) GetMigrationStatus()
+    {
+        using var connection = new SqlConnection(_connectionString);
+        connection.Open();
+
+        if (!MigrationHistoryTableExists(connection))
+        {
+            return (null, SqlServerMigrationScripts.All.Count);
+        }
+
+        using var command = new SqlCommand(
+            $"""
+            SELECT [MigrationId]
+            FROM [{_schema}].[{_migrationsTable}]
+            ORDER BY [MigrationId];
+            """,
+            connection);
+
+        var appliedMigrations = new List<string>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            appliedMigrations.Add(reader.GetString(0));
+        }
+
+        var pendingMigrations = SqlServerMigrationScripts.All.Count(script => !appliedMigrations.Contains(script.Id, StringComparer.Ordinal));
+        return (appliedMigrations.LastOrDefault(), pendingMigrations);
+    }
+
+    public (int LegacyStateRows, int DedicatedTablesWithData) GetStorageDiagnostics()
+    {
+        using var connection = new SqlConnection(_connectionString);
+        connection.Open();
+
+        var legacyStateRows = 0;
+        if (TableExists(connection, _table))
+        {
+            using var stateCommand = new SqlCommand($"SELECT COUNT(1) FROM [{_schema}].[{_table}];", connection);
+            legacyStateRows = Convert.ToInt32(stateCommand.ExecuteScalar());
+        }
+
+        var dedicatedTablesWithData = GetDedicatedTablesWithData(connection);
+
+        return (legacyStateRows, dedicatedTablesWithData);
+    }
+
+    public bool PersistLegacyStateSnapshot => _persistLegacyStateSnapshot;
 
     private void Load()
     {
@@ -129,6 +210,12 @@ public sealed class SqlServerErpStore : IErpStore
             {
                 sections[reader.GetString(0)] = reader.GetString(1);
             }
+        }
+
+        if (!_persistLegacyStateSnapshot && GetDedicatedTablesWithData(connection) > 0)
+        {
+            LoadDedicatedOperationalData(connection);
+            return;
         }
 
         if (sections.Count == 0)
@@ -620,14 +707,12 @@ public sealed class SqlServerErpStore : IErpStore
         }
     }
 
-    private void PersistStockMovements(SqlConnection connection)
+    private void PersistStockMovements(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, StockMovementsTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
 
         using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{StockMovementsTable}];", connection, transaction))
         {
@@ -660,29 +745,26 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.Parameters.AddWithValue("@DataHora", movimento.DataHora);
             insertCommand.ExecuteNonQuery();
         }
-
-        transaction.Commit();
     }
 
-    private void PersistCompanies(SqlConnection connection)
+    private void PersistCompanies(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, CompaniesTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{CompaniesTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var empresa in Empresas.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{CompaniesTable}] ([Id], [Documento], [Status], [Payload], [UpdatedAt])
-                VALUES (@Id, @Documento, @Status, @Payload, SYSUTCDATETIME());
+                MERGE [{_schema}].[{CompaniesTable}] AS target
+                USING (SELECT @Id AS [Id], @Documento AS [Documento], @Status AS [Status], @Payload AS [Payload]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [Documento] = source.[Documento], [Status] = source.[Status], [Payload] = source.[Payload], [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [Documento], [Status], [Payload], [UpdatedAt])
+                    VALUES (source.[Id], source.[Documento], source.[Status], source.[Payload], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -693,28 +775,27 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, CompaniesTable, Empresas.Keys);
     }
 
-    private void PersistSuppliers(SqlConnection connection)
+    private void PersistSuppliers(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, SuppliersTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{SuppliersTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var fornecedor in Fornecedores.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{SuppliersTable}] ([Id], [EmpresaId], [Documento], [Status], [Payload], [UpdatedAt])
-                VALUES (@Id, @EmpresaId, @Documento, @Status, @Payload, SYSUTCDATETIME());
+                MERGE [{_schema}].[{SuppliersTable}] AS target
+                USING (SELECT @Id AS [Id], @EmpresaId AS [EmpresaId], @Documento AS [Documento], @Status AS [Status], @Payload AS [Payload]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [EmpresaId] = source.[EmpresaId], [Documento] = source.[Documento], [Status] = source.[Status], [Payload] = source.[Payload], [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [EmpresaId], [Documento], [Status], [Payload], [UpdatedAt])
+                    VALUES (source.[Id], source.[EmpresaId], source.[Documento], source.[Status], source.[Payload], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -726,28 +807,27 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, SuppliersTable, Fornecedores.Keys);
     }
 
-    private void PersistProducts(SqlConnection connection)
+    private void PersistProducts(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, ProductsTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{ProductsTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var produto in Produtos.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{ProductsTable}] ([Id], [EmpresaId], [Sku], [Ativo], [Payload], [UpdatedAt])
-                VALUES (@Id, @EmpresaId, @Sku, @Ativo, @Payload, SYSUTCDATETIME());
+                MERGE [{_schema}].[{ProductsTable}] AS target
+                USING (SELECT @Id AS [Id], @EmpresaId AS [EmpresaId], @Sku AS [Sku], @Ativo AS [Ativo], @Payload AS [Payload]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [EmpresaId] = source.[EmpresaId], [Sku] = source.[Sku], [Ativo] = source.[Ativo], [Payload] = source.[Payload], [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [EmpresaId], [Sku], [Ativo], [Payload], [UpdatedAt])
+                    VALUES (source.[Id], source.[EmpresaId], source.[Sku], source.[Ativo], source.[Payload], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -759,28 +839,27 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, ProductsTable, Produtos.Keys);
     }
 
-    private void PersistCustomers(SqlConnection connection)
+    private void PersistCustomers(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, CustomersTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{CustomersTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var cliente in Clientes.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{CustomersTable}] ([Id], [EmpresaId], [Documento], [Status], [Payload], [UpdatedAt])
-                VALUES (@Id, @EmpresaId, @Documento, @Status, @Payload, SYSUTCDATETIME());
+                MERGE [{_schema}].[{CustomersTable}] AS target
+                USING (SELECT @Id AS [Id], @EmpresaId AS [EmpresaId], @Documento AS [Documento], @Status AS [Status], @Payload AS [Payload]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [EmpresaId] = source.[EmpresaId], [Documento] = source.[Documento], [Status] = source.[Status], [Payload] = source.[Payload], [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [EmpresaId], [Documento], [Status], [Payload], [UpdatedAt])
+                    VALUES (source.[Id], source.[EmpresaId], source.[Documento], source.[Status], source.[Payload], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -792,28 +871,27 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, CustomersTable, Clientes.Keys);
     }
 
-    private void PersistWarehouses(SqlConnection connection)
+    private void PersistWarehouses(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, WarehousesTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{WarehousesTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var deposito in Depositos.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{WarehousesTable}] ([Id], [EmpresaId], [Codigo], [Status], [Payload], [UpdatedAt])
-                VALUES (@Id, @EmpresaId, @Codigo, @Status, @Payload, SYSUTCDATETIME());
+                MERGE [{_schema}].[{WarehousesTable}] AS target
+                USING (SELECT @Id AS [Id], @EmpresaId AS [EmpresaId], @Codigo AS [Codigo], @Status AS [Status], @Payload AS [Payload]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [EmpresaId] = source.[EmpresaId], [Codigo] = source.[Codigo], [Status] = source.[Status], [Payload] = source.[Payload], [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [EmpresaId], [Codigo], [Status], [Payload], [UpdatedAt])
+                    VALUES (source.[Id], source.[EmpresaId], source.[Codigo], source.[Status], source.[Payload], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -825,28 +903,27 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, WarehousesTable, Depositos.Keys);
     }
 
-    private void PersistUsers(SqlConnection connection)
+    private void PersistUsers(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, UsersTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{UsersTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var usuario in Usuarios.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{UsersTable}] ([Id], [EmpresaId], [Email], [Status], [Payload], [UpdatedAt])
-                VALUES (@Id, @EmpresaId, @Email, @Status, @Payload, SYSUTCDATETIME());
+                MERGE [{_schema}].[{UsersTable}] AS target
+                USING (SELECT @Id AS [Id], @EmpresaId AS [EmpresaId], @Email AS [Email], @Status AS [Status], @Payload AS [Payload]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [EmpresaId] = source.[EmpresaId], [Email] = source.[Email], [Status] = source.[Status], [Payload] = source.[Payload], [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [EmpresaId], [Email], [Status], [Payload], [UpdatedAt])
+                    VALUES (source.[Id], source.[EmpresaId], source.[Email], source.[Status], source.[Payload], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -858,28 +935,27 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, UsersTable, Usuarios.Keys);
     }
 
-    private void PersistAccessProfiles(SqlConnection connection)
+    private void PersistAccessProfiles(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, AccessProfilesTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{AccessProfilesTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var perfilAcesso in PerfisAcesso.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{AccessProfilesTable}] ([Id], [EmpresaId], [Nome], [Payload], [UpdatedAt])
-                VALUES (@Id, @EmpresaId, @Nome, @Payload, SYSUTCDATETIME());
+                MERGE [{_schema}].[{AccessProfilesTable}] AS target
+                USING (SELECT @Id AS [Id], @EmpresaId AS [EmpresaId], @Nome AS [Nome], @Payload AS [Payload]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [EmpresaId] = source.[EmpresaId], [Nome] = source.[Nome], [Payload] = source.[Payload], [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [EmpresaId], [Nome], [Payload], [UpdatedAt])
+                    VALUES (source.[Id], source.[EmpresaId], source.[Nome], source.[Payload], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -890,28 +966,27 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, AccessProfilesTable, PerfisAcesso.Keys);
     }
 
-    private void PersistImportedKeys(SqlConnection connection)
+    private void PersistImportedKeys(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, ImportedKeysTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{ImportedKeysTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var chave in ChavesImportadas)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{ImportedKeysTable}] ([EmpresaId], [ChaveAcesso], [UpdatedAt])
-                VALUES (@EmpresaId, @ChaveAcesso, SYSUTCDATETIME());
+                MERGE [{_schema}].[{ImportedKeysTable}] AS target
+                USING (SELECT @EmpresaId AS [EmpresaId], @ChaveAcesso AS [ChaveAcesso]) AS source
+                ON target.[EmpresaId] = source.[EmpresaId] AND target.[ChaveAcesso] = source.[ChaveAcesso]
+                WHEN MATCHED THEN
+                    UPDATE SET [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([EmpresaId], [ChaveAcesso], [UpdatedAt])
+                    VALUES (source.[EmpresaId], source.[ChaveAcesso], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -920,28 +995,27 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingImportedKeys(connection, transaction);
     }
 
-    private void PersistWebhookEvents(SqlConnection connection)
+    private void PersistWebhookEvents(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, WebhookEventsTable))
         {
             return;
         }
-
-        using var transaction = connection.BeginTransaction();
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{WebhookEventsTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var eventoId in EventosWebhook)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{WebhookEventsTable}] ([EventoId], [UpdatedAt])
-                VALUES (@EventoId, SYSUTCDATETIME());
+                MERGE [{_schema}].[{WebhookEventsTable}] AS target
+                USING (SELECT @EventoId AS [EventoId]) AS source
+                ON target.[EventoId] = source.[EventoId]
+                WHEN MATCHED THEN
+                    UPDATE SET [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([EventoId], [UpdatedAt])
+                    VALUES (source.[EventoId], SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -949,35 +1023,109 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingStringRows(connection, transaction, WebhookEventsTable, "EventoId", EventosWebhook);
     }
 
-    private void PersistPurchaseImports(SqlConnection connection)
+    private void DeleteMissingGuidRows(SqlConnection connection, SqlTransaction transaction, string tableName, IEnumerable<Guid> ids)
+    {
+        var idList = ids.Distinct().ToArray();
+        if (idList.Length == 0)
+        {
+            using var deleteAll = new SqlCommand($"DELETE FROM [{_schema}].[{tableName}];", connection, transaction);
+            deleteAll.ExecuteNonQuery();
+            return;
+        }
+
+        var parameterNames = new List<string>(idList.Length);
+        using var command = new SqlCommand();
+        command.Connection = connection;
+        command.Transaction = transaction;
+
+        for (var index = 0; index < idList.Length; index++)
+        {
+            var parameterName = $"@Id{index}";
+            parameterNames.Add(parameterName);
+            command.Parameters.AddWithValue(parameterName, idList[index]);
+        }
+
+        command.CommandText = $"DELETE FROM [{_schema}].[{tableName}] WHERE [Id] NOT IN ({string.Join(", ", parameterNames)});";
+        command.ExecuteNonQuery();
+    }
+
+    private void DeleteMissingStringRows(SqlConnection connection, SqlTransaction transaction, string tableName, string columnName, IEnumerable<string> values)
+    {
+        var valueList = values.Where(item => !string.IsNullOrWhiteSpace(item)).Distinct(StringComparer.Ordinal).ToArray();
+        if (valueList.Length == 0)
+        {
+            using var deleteAll = new SqlCommand($"DELETE FROM [{_schema}].[{tableName}];", connection, transaction);
+            deleteAll.ExecuteNonQuery();
+            return;
+        }
+
+        var parameterNames = new List<string>(valueList.Length);
+        using var command = new SqlCommand();
+        command.Connection = connection;
+        command.Transaction = transaction;
+
+        for (var index = 0; index < valueList.Length; index++)
+        {
+            var parameterName = $"@Value{index}";
+            parameterNames.Add(parameterName);
+            command.Parameters.AddWithValue(parameterName, valueList[index]);
+        }
+
+        command.CommandText = $"DELETE FROM [{_schema}].[{tableName}] WHERE [{columnName}] NOT IN ({string.Join(", ", parameterNames)});";
+        command.ExecuteNonQuery();
+    }
+
+    private void DeleteMissingImportedKeys(SqlConnection connection, SqlTransaction transaction)
+    {
+        if (ChavesImportadas.Count == 0)
+        {
+            using var deleteAll = new SqlCommand($"DELETE FROM [{_schema}].[{ImportedKeysTable}];", connection, transaction);
+            deleteAll.ExecuteNonQuery();
+            return;
+        }
+
+        var clauses = new List<string>(ChavesImportadas.Count);
+        using var command = new SqlCommand();
+        command.Connection = connection;
+        command.Transaction = transaction;
+
+        var index = 0;
+        foreach (var chave in ChavesImportadas)
+        {
+            var empresaId = $"@EmpresaId{index}";
+            var chaveAcesso = $"@ChaveAcesso{index}";
+            clauses.Add($"([EmpresaId] = {empresaId} AND [ChaveAcesso] = {chaveAcesso})");
+            command.Parameters.AddWithValue(empresaId, chave.EmpresaId);
+            command.Parameters.AddWithValue(chaveAcesso, chave.ChaveAcesso);
+            index++;
+        }
+
+        command.CommandText = $"DELETE FROM [{_schema}].[{ImportedKeysTable}] WHERE NOT ({string.Join(" OR ", clauses)});";
+        command.ExecuteNonQuery();
+    }
+
+    private void PersistPurchaseImports(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, PurchaseImportsTable))
         {
             return;
         }
 
-        using var transaction = connection.BeginTransaction();
-
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{PurchaseImportsTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var importacao in ImportacoesNotaEntrada)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{PurchaseImportsTable}]
-                (
-                    [EmpresaId], [FornecedorId], [DepositoId], [ChaveAcesso], [ImportadaComSucesso], [ItensExternos], [ItensPendentesConciliacao], [MovimentosGerados], [ProcessadaEm]
-                )
-                VALUES
-                (
-                    @EmpresaId, @FornecedorId, @DepositoId, @ChaveAcesso, @ImportadaComSucesso, @ItensExternos, @ItensPendentesConciliacao, @MovimentosGerados, @ProcessadaEm
-                );
+                MERGE [{_schema}].[{PurchaseImportsTable}] AS target
+                USING (SELECT @EmpresaId AS [EmpresaId], @FornecedorId AS [FornecedorId], @DepositoId AS [DepositoId], @ChaveAcesso AS [ChaveAcesso]) AS source
+                ON target.[EmpresaId] = source.[EmpresaId] AND target.[ChaveAcesso] = source.[ChaveAcesso]
+                WHEN MATCHED THEN
+                    UPDATE SET [FornecedorId] = @FornecedorId, [DepositoId] = @DepositoId, [ImportadaComSucesso] = @ImportadaComSucesso, [ItensExternos] = @ItensExternos, [ItensPendentesConciliacao] = @ItensPendentesConciliacao, [MovimentosGerados] = @MovimentosGerados, [ProcessadaEm] = @ProcessadaEm
+                WHEN NOT MATCHED THEN
+                    INSERT ([EmpresaId], [FornecedorId], [DepositoId], [ChaveAcesso], [ImportadaComSucesso], [ItensExternos], [ItensPendentesConciliacao], [MovimentosGerados], [ProcessadaEm])
+                    VALUES (@EmpresaId, @FornecedorId, @DepositoId, @ChaveAcesso, @ImportadaComSucesso, @ItensExternos, @ItensPendentesConciliacao, @MovimentosGerados, @ProcessadaEm);
                 """,
                 connection,
                 transaction);
@@ -993,35 +1141,28 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingPurchaseImports(connection, transaction);
     }
 
-    private void PersistIntegrationEvents(SqlConnection connection)
+    private void PersistIntegrationEvents(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, IntegrationEventsTable))
         {
             return;
         }
 
-        using var transaction = connection.BeginTransaction();
-
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{IntegrationEventsTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var integrationEvent in IntegrationEvents)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{IntegrationEventsTable}]
-                (
-                    [Id], [Type], [SourceModule], [AggregateId], [Description], [OccurredAt]
-                )
-                VALUES
-                (
-                    @Id, @Type, @SourceModule, @AggregateId, @Description, @OccurredAt
-                );
+                MERGE [{_schema}].[{IntegrationEventsTable}] AS target
+                USING (SELECT @Id AS [Id]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [Type] = @Type, [SourceModule] = @SourceModule, [AggregateId] = @AggregateId, [Description] = @Description, [OccurredAt] = @OccurredAt
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [Type], [SourceModule], [AggregateId], [Description], [OccurredAt])
+                    VALUES (@Id, @Type, @SourceModule, @AggregateId, @Description, @OccurredAt);
                 """,
                 connection,
                 transaction);
@@ -1034,35 +1175,28 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, IntegrationEventsTable, IntegrationEvents.Select(item => item.Id));
     }
 
-    private void PersistProcessedWebhooks(SqlConnection connection)
+    private void PersistProcessedWebhooks(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, ProcessedWebhooksTable))
         {
             return;
         }
 
-        using var transaction = connection.BeginTransaction();
-
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{ProcessedWebhooksTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var webhook in WebhooksProcessados)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{ProcessedWebhooksTable}]
-                (
-                    [EventoId], [Origem], [Status], [Mensagem], [ProcessadoEm]
-                )
-                VALUES
-                (
-                    @EventoId, @Origem, @Status, @Mensagem, @ProcessadoEm
-                );
+                MERGE [{_schema}].[{ProcessedWebhooksTable}] AS target
+                USING (SELECT @EventoId AS [EventoId]) AS source
+                ON target.[EventoId] = source.[EventoId]
+                WHEN MATCHED THEN
+                    UPDATE SET [Origem] = @Origem, [Status] = @Status, [Mensagem] = @Mensagem, [ProcessadoEm] = @ProcessadoEm
+                WHEN NOT MATCHED THEN
+                    INSERT ([EventoId], [Origem], [Status], [Mensagem], [ProcessadoEm])
+                    VALUES (@EventoId, @Origem, @Status, @Mensagem, @ProcessadoEm);
                 """,
                 connection,
                 transaction);
@@ -1074,35 +1208,28 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingStringRows(connection, transaction, ProcessedWebhooksTable, "EventoId", WebhooksProcessados.Select(item => item.EventoId));
     }
 
-    private void PersistAuthSessions(SqlConnection connection)
+    private void PersistAuthSessions(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, AuthSessionsTable))
         {
             return;
         }
 
-        using var transaction = connection.BeginTransaction();
-
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{AuthSessionsTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var sessao in SessoesAutenticacao)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{AuthSessionsTable}]
-                (
-                    [Token], [UsuarioId], [EmpresaId], [Email], [CriadaEm], [ExpiraEm]
-                )
-                VALUES
-                (
-                    @Token, @UsuarioId, @EmpresaId, @Email, @CriadaEm, @ExpiraEm
-                );
+                MERGE [{_schema}].[{AuthSessionsTable}] AS target
+                USING (SELECT @Token AS [Token]) AS source
+                ON target.[Token] = source.[Token]
+                WHEN MATCHED THEN
+                    UPDATE SET [UsuarioId] = @UsuarioId, [EmpresaId] = @EmpresaId, [Email] = @Email, [CriadaEm] = @CriadaEm, [ExpiraEm] = @ExpiraEm
+                WHEN NOT MATCHED THEN
+                    INSERT ([Token], [UsuarioId], [EmpresaId], [Email], [CriadaEm], [ExpiraEm])
+                    VALUES (@Token, @UsuarioId, @EmpresaId, @Email, @CriadaEm, @ExpiraEm);
                 """,
                 connection,
                 transaction);
@@ -1115,35 +1242,28 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingStringRows(connection, transaction, AuthSessionsTable, "Token", SessoesAutenticacao.Select(item => item.Token));
     }
 
-    private void PersistRefreshTokens(SqlConnection connection)
+    private void PersistRefreshTokens(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, RefreshTokensTable))
         {
             return;
         }
 
-        using var transaction = connection.BeginTransaction();
-
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{RefreshTokensTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var refreshToken in RefreshTokens)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{RefreshTokensTable}]
-                (
-                    [Token], [SessionToken], [UsuarioId], [CriadoEm], [ExpiraEm]
-                )
-                VALUES
-                (
-                    @Token, @SessionToken, @UsuarioId, @CriadoEm, @ExpiraEm
-                );
+                MERGE [{_schema}].[{RefreshTokensTable}] AS target
+                USING (SELECT @Token AS [Token]) AS source
+                ON target.[Token] = source.[Token]
+                WHEN MATCHED THEN
+                    UPDATE SET [SessionToken] = @SessionToken, [UsuarioId] = @UsuarioId, [CriadoEm] = @CriadoEm, [ExpiraEm] = @ExpiraEm
+                WHEN NOT MATCHED THEN
+                    INSERT ([Token], [SessionToken], [UsuarioId], [CriadoEm], [ExpiraEm])
+                    VALUES (@Token, @SessionToken, @UsuarioId, @CriadoEm, @ExpiraEm);
                 """,
                 connection,
                 transaction);
@@ -1155,35 +1275,28 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingStringRows(connection, transaction, RefreshTokensTable, "Token", RefreshTokens.Select(item => item.Token));
     }
 
-    private void PersistSalesOrders(SqlConnection connection)
+    private void PersistSalesOrders(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, SalesOrdersTable))
         {
             return;
         }
 
-        using var transaction = connection.BeginTransaction();
-
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{SalesOrdersTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var pedido in Pedidos.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{SalesOrdersTable}]
-                (
-                    [Id], [ClienteId], [Status], [Payload], [UpdatedAt]
-                )
-                VALUES
-                (
-                    @Id, @ClienteId, @Status, @Payload, SYSUTCDATETIME()
-                );
+                MERGE [{_schema}].[{SalesOrdersTable}] AS target
+                USING (SELECT @Id AS [Id]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [ClienteId] = @ClienteId, [Status] = @Status, [Payload] = @Payload, [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [ClienteId], [Status], [Payload], [UpdatedAt])
+                    VALUES (@Id, @ClienteId, @Status, @Payload, SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -1194,35 +1307,28 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, SalesOrdersTable, Pedidos.Keys);
     }
 
-    private void PersistInvoices(SqlConnection connection)
+    private void PersistInvoices(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, InvoicesTable))
         {
             return;
         }
 
-        using var transaction = connection.BeginTransaction();
-
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{InvoicesTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var nota in NotasFiscais.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{InvoicesTable}]
-                (
-                    [Id], [PedidoVendaId], [ClienteId], [Status], [Payload], [UpdatedAt]
-                )
-                VALUES
-                (
-                    @Id, @PedidoVendaId, @ClienteId, @Status, @Payload, SYSUTCDATETIME()
-                );
+                MERGE [{_schema}].[{InvoicesTable}] AS target
+                USING (SELECT @Id AS [Id]) AS source
+                ON target.[Id] = source.[Id]
+                WHEN MATCHED THEN
+                    UPDATE SET [PedidoVendaId] = @PedidoVendaId, [ClienteId] = @ClienteId, [Status] = @Status, [Payload] = @Payload, [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([Id], [PedidoVendaId], [ClienteId], [Status], [Payload], [UpdatedAt])
+                    VALUES (@Id, @PedidoVendaId, @ClienteId, @Status, @Payload, SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -1234,35 +1340,28 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingGuidRows(connection, transaction, InvoicesTable, NotasFiscais.Keys);
     }
 
-    private void PersistStockBalances(SqlConnection connection)
+    private void PersistStockBalances(SqlConnection connection, SqlTransaction transaction)
     {
         if (!TableExists(connection, StockBalancesTable))
         {
             return;
         }
 
-        using var transaction = connection.BeginTransaction();
-
-        using (var deleteCommand = new SqlCommand($"DELETE FROM [{_schema}].[{StockBalancesTable}];", connection, transaction))
-        {
-            deleteCommand.ExecuteNonQuery();
-        }
-
         foreach (var saldo in Saldos.Values)
         {
             using var insertCommand = new SqlCommand(
                 $"""
-                INSERT INTO [{_schema}].[{StockBalancesTable}]
-                (
-                    [ProdutoId], [DepositoId], [PermiteSaldoNegativo], [Payload], [UpdatedAt]
-                )
-                VALUES
-                (
-                    @ProdutoId, @DepositoId, @PermiteSaldoNegativo, @Payload, SYSUTCDATETIME()
-                );
+                MERGE [{_schema}].[{StockBalancesTable}] AS target
+                USING (SELECT @ProdutoId AS [ProdutoId], @DepositoId AS [DepositoId]) AS source
+                ON target.[ProdutoId] = source.[ProdutoId] AND target.[DepositoId] = source.[DepositoId]
+                WHEN MATCHED THEN
+                    UPDATE SET [PermiteSaldoNegativo] = @PermiteSaldoNegativo, [Payload] = @Payload, [UpdatedAt] = SYSUTCDATETIME()
+                WHEN NOT MATCHED THEN
+                    INSERT ([ProdutoId], [DepositoId], [PermiteSaldoNegativo], [Payload], [UpdatedAt])
+                    VALUES (@ProdutoId, @DepositoId, @PermiteSaldoNegativo, @Payload, SYSUTCDATETIME());
                 """,
                 connection,
                 transaction);
@@ -1273,7 +1372,63 @@ public sealed class SqlServerErpStore : IErpStore
             insertCommand.ExecuteNonQuery();
         }
 
-        transaction.Commit();
+        DeleteMissingStockBalances(connection, transaction);
+    }
+
+    private void DeleteMissingPurchaseImports(SqlConnection connection, SqlTransaction transaction)
+    {
+        if (ImportacoesNotaEntrada.Count == 0)
+        {
+            using var deleteAll = new SqlCommand($"DELETE FROM [{_schema}].[{PurchaseImportsTable}];", connection, transaction);
+            deleteAll.ExecuteNonQuery();
+            return;
+        }
+
+        var clauses = new List<string>(ImportacoesNotaEntrada.Count);
+        using var command = new SqlCommand();
+        command.Connection = connection;
+        command.Transaction = transaction;
+
+        for (var index = 0; index < ImportacoesNotaEntrada.Count; index++)
+        {
+            var empresaId = $"@ImportEmpresaId{index}";
+            var chaveAcesso = $"@ImportChaveAcesso{index}";
+            clauses.Add($"([EmpresaId] = {empresaId} AND [ChaveAcesso] = {chaveAcesso})");
+            command.Parameters.AddWithValue(empresaId, ImportacoesNotaEntrada[index].EmpresaId);
+            command.Parameters.AddWithValue(chaveAcesso, ImportacoesNotaEntrada[index].ChaveAcesso);
+        }
+
+        command.CommandText = $"DELETE FROM [{_schema}].[{PurchaseImportsTable}] WHERE NOT ({string.Join(" OR ", clauses)});";
+        command.ExecuteNonQuery();
+    }
+
+    private void DeleteMissingStockBalances(SqlConnection connection, SqlTransaction transaction)
+    {
+        if (Saldos.Count == 0)
+        {
+            using var deleteAll = new SqlCommand($"DELETE FROM [{_schema}].[{StockBalancesTable}];", connection, transaction);
+            deleteAll.ExecuteNonQuery();
+            return;
+        }
+
+        var clauses = new List<string>(Saldos.Count);
+        using var command = new SqlCommand();
+        command.Connection = connection;
+        command.Transaction = transaction;
+
+        var index = 0;
+        foreach (var chave in Saldos.Keys)
+        {
+            var produtoId = $"@SaldoProdutoId{index}";
+            var depositoId = $"@SaldoDepositoId{index}";
+            clauses.Add($"([ProdutoId] = {produtoId} AND [DepositoId] = {depositoId})");
+            command.Parameters.AddWithValue(produtoId, chave.ProdutoId);
+            command.Parameters.AddWithValue(depositoId, chave.DepositoId);
+            index++;
+        }
+
+        command.CommandText = $"DELETE FROM [{_schema}].[{StockBalancesTable}] WHERE NOT ({string.Join(" OR ", clauses)});";
+        command.ExecuteNonQuery();
     }
 
     private bool TableExists(SqlConnection connection, string tableName)
@@ -1289,5 +1444,26 @@ public sealed class SqlServerErpStore : IErpStore
         command.Parameters.AddWithValue("@SchemaName", _schema);
         command.Parameters.AddWithValue("@TableName", tableName);
         return Convert.ToInt32(command.ExecuteScalar()) > 0;
+    }
+
+    private int GetDedicatedTablesWithData(SqlConnection connection)
+    {
+        var dedicatedTablesWithData = 0;
+        foreach (var tableName in DedicatedTables)
+        {
+            if (!TableExists(connection, tableName))
+            {
+                continue;
+            }
+
+            using var command = new SqlCommand($"SELECT TOP (1) 1 FROM [{_schema}].[{tableName}];", connection);
+            var result = command.ExecuteScalar();
+            if (result is not null && result is not DBNull)
+            {
+                dedicatedTablesWithData++;
+            }
+        }
+
+        return dedicatedTablesWithData;
     }
 }

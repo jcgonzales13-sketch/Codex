@@ -7,7 +7,7 @@ public sealed class SqlServerMigrationScriptsTests
     [Fact]
     public void Deve_expor_scripts_ordenados_e_versionados()
     {
-        Assert.True(SqlServerMigrationScripts.All.Count >= 14);
+        Assert.True(SqlServerMigrationScripts.All.Count >= 15);
         Assert.Equal(
             SqlServerMigrationScripts.All.Select(item => item.Id).OrderBy(item => item).ToArray(),
             SqlServerMigrationScripts.All.Select(item => item.Id).ToArray());
@@ -95,5 +95,19 @@ public sealed class SqlServerMigrationScriptsTests
         Assert.Contains("[erp].[PerfisAcesso]", rendered);
         Assert.Contains("[erp].[ChavesImportadas]", rendered);
         Assert.Contains("[erp].[EventosWebhook]", rendered);
+    }
+
+    [Fact]
+    public void Deve_renderizar_foreign_keys_relacionais()
+    {
+        var script = SqlServerMigrationScripts.All.Single(item => item.Id == "015");
+
+        var rendered = SqlServerMigrationScripts.Render(script, "erp", "StateStore", "MigrationHistory");
+
+        Assert.Contains("FK_Clientes_Empresas_EmpresaId", rendered);
+        Assert.Contains("FK_PedidosVenda_Clientes_ClienteId", rendered);
+        Assert.Contains("FK_NotasFiscais_PedidosVenda_PedidoVendaId", rendered);
+        Assert.Contains("FK_SaldosEstoque_Produtos_ProdutoId", rendered);
+        Assert.Contains("FK_RefreshTokens_SessoesAutenticacao_SessionToken", rendered);
     }
 }

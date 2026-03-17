@@ -183,8 +183,9 @@ Observacao: no ambiente onde este repositorio foi preparado, o SDK .NET 9 pode f
 `Render`
 
 - `ASPNETCORE_ENVIRONMENT=Production`
-- `Storage__Provider=JsonFile` com persistent disk em `/data`, ou `InMemory` para ambiente descartavel
-- `Storage__FilePath=/data/erp-store.json`
+- `Storage__Provider=SqlServer`
+- `Storage__ConnectionString` obrigatoria
+- `Storage__PersistLegacyStateSnapshot=false`
 - `Jwt__SigningKey` obrigatoria e forte
 - `WebhookSecurity__SharedSecret` obrigatoria quando houver integracoes externas com assinatura
 
@@ -198,8 +199,9 @@ Observacao: no ambiente onde este repositorio foi preparado, o SDK .NET 9 pode f
 
 - o provider aplica bootstrap e migrations iniciais automaticamente ao subir
 - as migrations tambem estao versionadas em arquivos `.sql` sob [SqlServer](/c:/CodexProject/src/ERP.Api/Application/Storage/Migrations/SqlServer)
-- os dados de snapshot continuam separados por secao em `Storage__StateTable`
-- o provider SQL agora possui tabelas dedicadas para dados mestres, marcadores de idempotencia e agregados operacionais, reduzindo drasticamente a dependencia do `ErpState` para compatibilidade e fallback
+- `Storage__PersistLegacyStateSnapshot=false` e o modo recomendado para producao
+- com essa flag desligada, a API para de regravar `ErpState` e passa a operar preferencialmente pelas tabelas dedicadas
+- `ErpState` permanece apenas como fallback controlado para compatibilidade e migracao gradual
 - tabelas padrao:
   - `Storage__StateTable=ErpState`
   - `Storage__MigrationsTable=ErpMigrations`
@@ -515,7 +517,8 @@ Exemplo com SQL Server local:
   "ConnectionString": "Server=GONZALES;Database=CodexErp;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False;",
   "Schema": "dbo",
   "StateTable": "ErpState",
-  "MigrationsTable": "ErpMigrations"
+  "MigrationsTable": "ErpMigrations",
+  "PersistLegacyStateSnapshot": false
 }
 ```
 

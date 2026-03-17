@@ -19,7 +19,8 @@ internal static class SqlServerMigrationScripts
         new("011", "Create dedicated stock balance aggregate table", "011_stock_balance_table.sql"),
         new("012", "Create operational index for stock balance aggregate table", "012_stock_balance_indexes.sql"),
         new("013", "Create dedicated master data and idempotency marker tables", "013_master_data_tables.sql"),
-        new("014", "Create operational indexes for master data and idempotency marker tables", "014_master_data_indexes.sql")
+        new("014", "Create operational indexes for master data and idempotency marker tables", "014_master_data_indexes.sql"),
+        new("015", "Create relational foreign keys across dedicated SQL tables", "015_relational_foreign_keys.sql")
     ];
 
     internal static string Render(SqlServerMigrationScript script, string schema, string stateTable, string migrationsTable)

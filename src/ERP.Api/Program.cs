@@ -229,9 +229,22 @@ app.MapGet("/modules", () => Results.Ok(ApiResponses.Ok(new[]
 .Produces(StatusCodes.Status200OK);
 
 app.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.IOptions<StorageOptions> options) =>
-    Results.Ok(ApiResponses.Ok(new StorageStatusResponse(
+{
+    var migrationStatus = store is SqlServerErpStore sqlStore
+        ? sqlStore.GetMigrationStatus()
+        : ((string?)null, 0);
+    var storageDiagnostics = store is SqlServerErpStore sqlStoreDiagnostics
+        ? sqlStoreDiagnostics.GetStorageDiagnostics()
+        : (0, 0);
+
+    return Results.Ok(ApiResponses.Ok(new StorageStatusResponse(
         options.Value.Provider,
         options.Value.FilePath,
+        store is SqlServerErpStore sqlSnapshotPolicy ? sqlSnapshotPolicy.PersistLegacyStateSnapshot : options.Value.PersistLegacyStateSnapshot,
+        migrationStatus.Item1,
+        migrationStatus.Item2,
+        storageDiagnostics.Item1,
+        storageDiagnostics.Item2,
         store.Empresas.Count,
         store.Fornecedores.Count,
         store.Produtos.Count,
@@ -242,7 +255,8 @@ app.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.IOp
         store.NotasFiscais.Count,
         store.Saldos.Count,
         store.ChavesImportadas.Count,
-        store.EventosWebhook.Count))))
+        store.EventosWebhook.Count)));
+})
     .WithSummary("Inspeciona o estado do storage.")
     .WithDescription("Retorna o provider configurado e contagens atuais das entidades persistidas. E util para diagnostico rapido de volume e confirmacao do backend de armazenamento em uso.")
     .Produces(StatusCodes.Status200OK);
@@ -298,9 +312,22 @@ apiV1.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Heal
 .WithSummary("Health check de prontidao em v1.")
 .WithDescription("Versao v1 do endpoint de readiness, para clientes que consomem somente a superficie versionada.");
 apiV1.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.IOptions<StorageOptions> options) =>
-    Results.Ok(ApiResponses.Ok(new StorageStatusResponse(
+{
+    var migrationStatus = store is SqlServerErpStore sqlStore
+        ? sqlStore.GetMigrationStatus()
+        : ((string?)null, 0);
+    var storageDiagnostics = store is SqlServerErpStore sqlStoreDiagnostics
+        ? sqlStoreDiagnostics.GetStorageDiagnostics()
+        : (0, 0);
+
+    return Results.Ok(ApiResponses.Ok(new StorageStatusResponse(
         options.Value.Provider,
         options.Value.FilePath,
+        store is SqlServerErpStore sqlSnapshotPolicy ? sqlSnapshotPolicy.PersistLegacyStateSnapshot : options.Value.PersistLegacyStateSnapshot,
+        migrationStatus.Item1,
+        migrationStatus.Item2,
+        storageDiagnostics.Item1,
+        storageDiagnostics.Item2,
         store.Empresas.Count,
         store.Fornecedores.Count,
         store.Produtos.Count,
@@ -311,7 +338,8 @@ apiV1.MapGet("/system/storage", (IErpStore store, Microsoft.Extensions.Options.I
         store.NotasFiscais.Count,
         store.Saldos.Count,
         store.ChavesImportadas.Count,
-        store.EventosWebhook.Count))))
+        store.EventosWebhook.Count)));
+})
     .WithSummary("Inspeciona o estado do storage em v1.")
     .WithDescription("Versao v1 do endpoint de diagnostico do storage.")
     .Produces(StatusCodes.Status200OK);

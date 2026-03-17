@@ -51,6 +51,23 @@ public sealed class HealthAndIdentityIntegrationTests : IClassFixture<ErpApiFact
     }
 
     [Fact]
+    public async Task Deve_expor_diagnostico_de_storage_com_campos_operacionais()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/system/storage");
+
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<JsonElement>>(JsonOptions);
+        Assert.NotNull(envelope);
+        Assert.Equal("InMemory", envelope!.Data.GetProperty("provider").GetString());
+        Assert.True(envelope.Data.GetProperty("persistLegacyStateSnapshot").GetBoolean());
+        Assert.Equal(0, envelope.Data.GetProperty("pendingMigrations").GetInt32());
+        Assert.Equal(0, envelope.Data.GetProperty("legacyStateRows").GetInt32());
+        Assert.Equal(0, envelope.Data.GetProperty("dedicatedTablesWithData").GetInt32());
+    }
+
+    [Fact]
     public async Task Deve_expor_metricas_e_modulos_na_superficie_versionada_v1()
     {
         using var client = _factory.CreateClient();

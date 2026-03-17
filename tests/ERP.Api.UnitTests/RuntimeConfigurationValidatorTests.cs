@@ -42,6 +42,7 @@ public sealed class RuntimeConfigurationValidatorTests
         {
             ["Storage:Provider"] = "SqlServer",
             ["Storage:ConnectionString"] = "Server=sql;Database=erp;User Id=app;Password=secret;",
+            ["Storage:PersistLegacyStateSnapshot"] = "false",
             ["Jwt:SigningKey"] = "CHANGE_ME_DEVELOPMENT_ONLY_SIGNING_KEY_123456789"
         });
 
@@ -64,6 +65,23 @@ public sealed class RuntimeConfigurationValidatorTests
             RuntimeConfigurationValidator.Validate(configuration, new FakeHostEnvironment("Development")));
 
         Assert.Contains("Storage:ConnectionString", exception.Message);
+    }
+
+    [Fact]
+    public void Deve_rejeitar_snapshot_legado_habilitado_em_production()
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Storage:Provider"] = "SqlServer",
+            ["Storage:ConnectionString"] = "Server=sql;Database=erp;User Id=app;Password=secret;",
+            ["Storage:PersistLegacyStateSnapshot"] = "true",
+            ["Jwt:SigningKey"] = "segredo-forte-producao"
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            RuntimeConfigurationValidator.Validate(configuration, new FakeHostEnvironment("Production")));
+
+        Assert.Contains("PersistLegacyStateSnapshot", exception.Message);
     }
 
     private static IConfiguration BuildConfiguration(Dictionary<string, string?> values)

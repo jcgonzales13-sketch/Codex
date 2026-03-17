@@ -1,4 +1,5 @@
 using ERP.Api.Application.Storage;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -13,6 +14,28 @@ public sealed class StorageHealthCheck(IOptions<StorageOptions> options) : IHeal
         if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
         {
             return Task.FromResult(HealthCheckResult.Healthy("Storage em memoria ativo."));
+        }
+
+        if (string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+        {
+            var connectionString = options.Value.ConnectionString?.Trim();
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                return Task.FromResult(HealthCheckResult.Unhealthy("ConnectionString do storage SqlServer nao configurada."));
+            }
+
+            try
+            {
+                using var connection = new SqlConnection(connectionString);
+                connection.Open();
+                using var command = new SqlCommand("SELECT 1", connection);
+                _ = command.ExecuteScalar();
+                return Task.FromResult(HealthCheckResult.Healthy("Storage SqlServer conectado e respondendo."));
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult(HealthCheckResult.Unhealthy("Falha ao validar storage SqlServer.", ex));
+            }
         }
 
         if (!string.Equals(provider, "JsonFile", StringComparison.OrdinalIgnoreCase))

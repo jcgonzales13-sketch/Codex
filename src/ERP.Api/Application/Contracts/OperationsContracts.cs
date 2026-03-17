@@ -3,6 +3,11 @@ namespace ERP.Api.Application.Contracts;
 public sealed record StorageStatusResponse(
     string Provider,
     string? FilePath,
+    bool PersistLegacyStateSnapshot,
+    string? LastAppliedMigrationId,
+    int PendingMigrations,
+    int LegacyStateRows,
+    int DedicatedTablesWithData,
     int Empresas,
     int Fornecedores,
     int Produtos,
